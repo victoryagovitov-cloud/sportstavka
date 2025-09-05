@@ -6,7 +6,7 @@ import re
 import time
 from selenium.webdriver.common.by import By
 from scrapers.base_scraper import BaseScraper
-from scrapers.sofascore_scraper_v2 import SofaScoreScraperV2
+from scrapers.sofascore_simple_quality import SofaScoreSimpleQuality
 from config import TABLE_TENNIS_FILTER
 
 class TableTennisScraper(BaseScraper):
@@ -16,7 +16,7 @@ class TableTennisScraper(BaseScraper):
     
     def __init__(self, logger):
         super().__init__(logger)
-        self.sofascore_scraper = SofaScoreScraperV2(logger)
+        self.sofascore_scraper = SofaScoreSimpleQuality(logger)
     
     def get_live_matches(self, url: str) -> List[Dict[str, Any]]:
         """
