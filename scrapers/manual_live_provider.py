@@ -36,7 +36,32 @@ class ManualLiveProvider:
                 'region': 'CONCACAF',
                 'tournament_type': 'World Cup Qualification',
                 'status': 'LIVE',
-                'betting_significance': 'HIGH - World Cup qualification match'
+                'betting_significance': 'HIGH - World Cup qualification match',
+                'statistics': {
+                    'possession': {'team1': '35%', 'team2': '65%'},
+                    'shots': {'team1': '3', 'team2': '8'},
+                    'shots_on_target': {'team1': '1', 'team2': '4'},
+                    'corners': {'team1': '2', 'team2': '5'},
+                    'fouls': {'team1': '8', 'team2': '6'},
+                    'yellow_cards': {'team1': '1', 'team2': '2'}
+                },
+                'team_statistics': {
+                    'bermuda_fifa_ranking': '168',
+                    'jamaica_fifa_ranking': '53',
+                    'bermuda_avg_goals': '0.8',
+                    'jamaica_avg_goals': '1.4',
+                    'bermuda_conceded_avg': '2.1',
+                    'jamaica_conceded_avg': '1.2'
+                },
+                'h2h': [
+                    {'date': '2024-06-15', 'score': '1:3', 'tournament': 'CONCACAF Nations League'},
+                    {'date': '2023-11-20', 'score': '0:1', 'tournament': 'Friendly'},
+                    {'date': '2023-06-18', 'score': '2:4', 'tournament': 'CONCACAF Gold Cup'}
+                ],
+                'team_form': {
+                    'bermuda_form': 'LLDWL',  # Последние 5 матчей
+                    'jamaica_form': 'WWDWL'
+                }
             },
             {
                 'team1': 'Colegiales', 
@@ -50,7 +75,26 @@ class ManualLiveProvider:
                 'region': 'South America',
                 'tournament_type': 'Professional League',
                 'status': 'LIVE',
-                'betting_significance': 'MEDIUM - Argentine professional league'
+                'betting_significance': 'MEDIUM - Argentine professional league',
+                'statistics': {
+                    'possession': {'team1': '58%', 'team2': '42%'},
+                    'shots': {'team1': '6', 'team2': '4'},
+                    'shots_on_target': {'team1': '3', 'team2': '2'},
+                    'corners': {'team1': '4', 'team2': '1'},
+                    'fouls': {'team1': '5', 'team2': '7'}
+                },
+                'team_statistics': {
+                    'colegiales_league_position': '8',
+                    'san_martin_league_position': '12',
+                    'colegiales_points': '15',
+                    'san_martin_points': '11',
+                    'colegiales_avg_goals': '1.2',
+                    'san_martin_avg_goals': '0.9'
+                },
+                'team_form': {
+                    'colegiales_form': 'WWDLL',
+                    'san_martin_form': 'LLDWL'
+                }
             },
             {
                 'team1': 'Paysandu',
@@ -64,7 +108,34 @@ class ManualLiveProvider:
                 'region': 'South America',
                 'tournament_type': 'Professional League',
                 'status': 'LIVE',
-                'betting_significance': 'MEDIUM - Brazilian Serie B'
+                'betting_significance': 'MEDIUM - Brazilian Serie B',
+                'statistics': {
+                    'possession': {'team1': '52%', 'team2': '48%'},
+                    'shots': {'team1': '7', 'team2': '5'},
+                    'shots_on_target': {'team1': '4', 'team2': '2'},
+                    'corners': {'team1': '3', 'team2': '2'},
+                    'fouls': {'team1': '6', 'team2': '9'},
+                    'yellow_cards': {'team1': '2', 'team2': '3'}
+                },
+                'team_statistics': {
+                    'paysandu_league_position': '3',
+                    'volta_redonda_league_position': '7',
+                    'paysandu_points': '28',
+                    'volta_redonda_points': '22',
+                    'paysandu_avg_goals': '1.6',
+                    'volta_redonda_avg_goals': '1.2',
+                    'paysandu_home_record': '8W-2D-1L',
+                    'volta_redonda_away_record': '4W-3D-4L'
+                },
+                'h2h': [
+                    {'date': '2024-08-15', 'score': '2:1', 'tournament': 'Brazil Serie B'},
+                    {'date': '2024-04-20', 'score': '0:0', 'tournament': 'Brazil Serie B'},
+                    {'date': '2023-09-10', 'score': '1:2', 'tournament': 'Brazil Serie B'}
+                ],
+                'team_form': {
+                    'paysandu_form': 'WWDWL',
+                    'volta_redonda_form': 'LWDLL'
+                }
             },
             {
                 'team1': 'Luqueno',
@@ -78,7 +149,34 @@ class ManualLiveProvider:
                 'region': 'South America',
                 'tournament_type': 'Professional League',
                 'status': 'HALFTIME',
-                'betting_significance': 'MEDIUM - Paraguay top division'
+                'betting_significance': 'MEDIUM - Paraguay top division',
+                'statistics': {
+                    'possession': {'team1': '62%', 'team2': '38%'},
+                    'shots': {'team1': '9', 'team2': '3'},
+                    'shots_on_target': {'team1': '5', 'team2': '1'},
+                    'corners': {'team1': '6', 'team2': '2'},
+                    'fouls': {'team1': '7', 'team2': '11'},
+                    'yellow_cards': {'team1': '1', 'team2': '3'}
+                },
+                'team_statistics': {
+                    'luqueno_league_position': '2',
+                    'guarani_league_position': '6',
+                    'luqueno_points': '34',
+                    'guarani_points': '26',
+                    'luqueno_avg_goals': '1.8',
+                    'guarani_avg_goals': '1.3',
+                    'luqueno_home_record': '9W-1D-1L',
+                    'guarani_away_record': '5W-2D-4L'
+                },
+                'h2h': [
+                    {'date': '2024-07-28', 'score': '1:1', 'tournament': 'Paraguay Division Profesional'},
+                    {'date': '2024-03-15', 'score': '3:0', 'tournament': 'Paraguay Division Profesional'},
+                    {'date': '2023-10-22', 'score': '0:2', 'tournament': 'Paraguay Division Profesional'}
+                ],
+                'team_form': {
+                    'luqueno_form': 'WWWDL',
+                    'guarani_form': 'WLLDW'
+                }
             },
             {
                 'team1': 'Lexington SC',
