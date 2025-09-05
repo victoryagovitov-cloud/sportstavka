@@ -7,6 +7,7 @@ import time
 from selenium.webdriver.common.by import By
 from scrapers.base_scraper import BaseScraper
 from scrapers.improved_scraper import ImprovedScraper
+from scrapers.ultimate_scraper import UltimateScraper
 from config import FOOTBALL_FILTER, TOP_LEAGUES
 
 class FootballScraper(BaseScraper):
@@ -17,6 +18,7 @@ class FootballScraper(BaseScraper):
     def __init__(self, logger):
         super().__init__(logger)
         self.improved_scraper = ImprovedScraper(logger)
+        self.ultimate_scraper = UltimateScraper(logger)
     
     def get_live_matches(self, url: str) -> List[Dict[str, Any]]:
         """
@@ -24,9 +26,9 @@ class FootballScraper(BaseScraper):
         """
         self.logger.info(f"Сбор live футбольных матчей с {url}")
         
-        # Используем улучшенный скрапер с несколькими методами
+        # Используем исправленный скрапер
         try:
-            matches = self.improved_scraper.get_live_matches_multi_method(url, 'football')
+            matches = self.ultimate_scraper.get_live_matches(url, 'football')
             self.logger.info(f"Найдено {len(matches)} футбольных матчей")
             return matches
         except Exception as e:

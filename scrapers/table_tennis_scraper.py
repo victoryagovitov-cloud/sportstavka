@@ -6,6 +6,7 @@ import re
 import time
 from selenium.webdriver.common.by import By
 from scrapers.base_scraper import BaseScraper
+from scrapers.ultimate_scraper import UltimateScraper
 from config import TABLE_TENNIS_FILTER
 
 class TableTennisScraper(BaseScraper):
@@ -13,39 +14,24 @@ class TableTennisScraper(BaseScraper):
     Скрапер для сбора данных матчей настольного тенниса с scores24.live
     """
     
+    def __init__(self, logger):
+        super().__init__(logger)
+        self.ultimate_scraper = UltimateScraper(logger)
+    
     def get_live_matches(self, url: str) -> List[Dict[str, Any]]:
         """
         Получение списка live матчей настольного тенниса
         """
         self.logger.info(f"Сбор live матчей настольного тенниса с {url}")
         
+        # Используем исправленный скрапер
         try:
-            self.setup_driver()
-            self.driver.get(url)
-            time.sleep(5)
-            
-            matches = []
-            
-            # Ищем все live матчи
-            match_elements = self.safe_find_elements(By.CSS_SELECTOR, "[data-testid='match']")
-            
-            for match_elem in match_elements:
-                try:
-                    match_data = self._extract_basic_match_info(match_elem)
-                    if match_data:
-                        matches.append(match_data)
-                except Exception as e:
-                    self.logger.warning(f"Ошибка извлечения данных матча настольного тенниса: {e}")
-                    continue
-            
+            matches = self.ultimate_scraper.get_live_matches(url, 'table_tennis')
             self.logger.info(f"Найдено {len(matches)} матчей настольного тенниса")
             return matches
-            
         except Exception as e:
             self.logger.error(f"Ошибка получения матчей настольного тенниса: {e}")
             return []
-        finally:
-            self.close_driver()
     
     def _extract_basic_match_info(self, match_elem) -> Dict[str, Any]:
         """
