@@ -13,6 +13,7 @@ from scrapers.football_scraper import FootballScraper
 from scrapers.tennis_scraper import TennisScraper
 from scrapers.table_tennis_scraper import TableTennisScraper
 from scrapers.handball_scraper import HandballScraper
+from scrapers.sofascore_simple_quality import SofaScoreSimpleQuality
 from scrapers.demo_data_provider import demo_provider
 from ai_analyzer.claude_analyzer import ClaudeAnalyzer
 from telegram_bot.reporter import TelegramReporter
@@ -32,6 +33,9 @@ class SportsAnalyzer:
         self.running = False
         
         # Инициализация компонентов
+        # Инициализируем SofaScore скрапер для детальной статистики
+        self.sofascore_scraper = SofaScoreSimpleQuality(self.logger)
+        
         self.scrapers = {
             'football': FootballScraper(self.logger),
             'tennis': TennisScraper(self.logger),
@@ -221,7 +225,11 @@ class SportsAnalyzer:
                 self.logger.info(f"Сбор детальных данных для {sport} матча: {match_url}")
                 
                 # Собираем подробные данные
-                detailed_data = scraper.collect_match_data(match_url)
+                # Используем SofaScore детальный сбор если доступен
+                if hasattr(self, 'sofascore_scraper') and match_url.startswith('/'):
+                    detailed_data = self.sofascore_scraper.get_detailed_match_data(match_url)
+                else:
+                    detailed_data = scraper.collect_match_data(match_url)
                 
                 # Объединяем с базовой информацией
                 detailed_data.update(match)

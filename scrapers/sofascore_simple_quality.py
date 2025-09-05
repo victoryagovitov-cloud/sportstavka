@@ -344,6 +344,198 @@ class SofaScoreSimpleQuality:
         
         return stats
     
+    def get_detailed_match_data(self, match_url: str) -> Dict[str, Any]:
+        """
+        Получение детальных данных матча с SofaScore
+        """
+        full_url = f"https://www.sofascore.com{match_url}"
+        
+        try:
+            response = self.session.get(full_url, timeout=15)
+            
+            if response.status_code != 200:
+                return {}
+            
+            page_text = response.text
+            detailed_data = {}
+            
+            # Базовые данные матча
+            basic_data = self._get_basic_match_data(match_url)
+            detailed_data.update(basic_data)
+            
+            # Расширенная статистика
+            detailed_stats = self._extract_detailed_statistics(page_text)
+            if detailed_stats:
+                detailed_data['detailed_statistics'] = detailed_stats
+            
+            # История встреч (H2H)
+            h2h_data = self._extract_h2h_data(page_text)
+            if h2h_data:
+                detailed_data['h2h'] = h2h_data
+            
+            # Форма команд
+            form_data = self._extract_team_form(page_text)
+            if form_data:
+                detailed_data['team_form'] = form_data
+            
+            # Коэффициенты
+            odds_data = self._extract_odds_data(page_text)
+            if odds_data:
+                detailed_data['odds'] = odds_data
+            
+            return detailed_data
+            
+        except Exception as e:
+            self.logger.error(f"Ошибка сбора детальных данных {match_url}: {e}")
+            return {}
+    
+    def _extract_detailed_statistics(self, page_text: str) -> Dict[str, Any]:
+        """
+        Извлечение детальной статистики матча
+        """
+        stats = {}
+        
+        try:
+            # Поиск JSON данных со статистикой
+            json_pattern = r'"statistics":\s*(\[.*?\])'
+            json_match = re.search(json_pattern, page_text, re.DOTALL)
+            
+            if json_match:
+                import json
+                try:
+                    stats_json = json.loads(json_match.group(1))
+                    
+                    for stat_group in stats_json:
+                        if isinstance(stat_group, dict) and 'groups' in stat_group:
+                            for group in stat_group['groups']:
+                                if 'statisticsItems' in group:
+                                    for item in group['statisticsItems']:
+                                        stat_name = item.get('name', '')
+                                        home_value = item.get('homeValue', '')
+                                        away_value = item.get('awayValue', '')
+                                        
+                                        if stat_name and home_value != '' and away_value != '':
+                                            stats[stat_name] = {
+                                                'team1': str(home_value),
+                                                'team2': str(away_value)
+                                            }
+                except:
+                    pass
+            
+            # Если JSON не найден, используем регулярные выражения
+            if not stats:
+                stat_patterns = {
+                    'possession': r'(\d{1,2})%.*?(\d{1,2})%',
+                    'shots_total': r'"shotsTotal":\s*(\d+).*?"shotsTotal":\s*(\d+)',
+                    'shots_on_target': r'"shotsOnTarget":\s*(\d+).*?"shotsOnTarget":\s*(\d+)',
+                    'corners': r'"cornerKicks":\s*(\d+).*?"cornerKicks":\s*(\d+)',
+                    'fouls': r'"fouls":\s*(\d+).*?"fouls":\s*(\d+)',
+                    'yellow_cards': r'"yellowCards":\s*(\d+).*?"yellowCards":\s*(\d+)',
+                    'red_cards': r'"redCards":\s*(\d+).*?"redCards":\s*(\d+)',
+                    'offsides': r'"offsides":\s*(\d+).*?"offsides":\s*(\d+)',
+                    'passes': r'"passes":\s*(\d+).*?"passes":\s*(\d+)',
+                    'pass_accuracy': r'"passAccuracy":\s*(\d+).*?"passAccuracy":\s*(\d+)',
+                }
+                
+                for stat_name, pattern in stat_patterns.items():
+                    match = re.search(pattern, page_text)
+                    if match and len(match.groups()) >= 2:
+                        stats[stat_name] = {
+                            'team1': match.group(1),
+                            'team2': match.group(2)
+                        }
+            
+        except Exception as e:
+            self.logger.warning(f"Ошибка извлечения детальной статистики: {e}")
+        
+        return stats
+    
+    def _extract_h2h_data(self, page_text: str) -> List[Dict[str, Any]]:
+        """
+        Извлечение истории личных встреч
+        """
+        h2h_matches = []
+        
+        try:
+            # Поиск H2H данных в JSON
+            h2h_pattern = r'"h2h":\s*(\[.*?\])'
+            h2h_match = re.search(h2h_pattern, page_text, re.DOTALL)
+            
+            if h2h_match:
+                import json
+                try:
+                    h2h_json = json.loads(h2h_match.group(1))
+                    
+                    for match in h2h_json[:5]:  # Последние 5 матчей
+                        if isinstance(match, dict):
+                            h2h_matches.append({
+                                'date': match.get('startTimestamp', ''),
+                                'home_team': match.get('homeTeam', {}).get('name', ''),
+                                'away_team': match.get('awayTeam', {}).get('name', ''),
+                                'score': f"{match.get('homeScore', '')}-{match.get('awayScore', '')}",
+                                'tournament': match.get('tournament', {}).get('name', '')
+                            })
+                except:
+                    pass
+                    
+        except Exception as e:
+            self.logger.warning(f"Ошибка извлечения H2H: {e}")
+        
+        return h2h_matches
+    
+    def _extract_team_form(self, page_text: str) -> Dict[str, Any]:
+        """
+        Извлечение формы команд (последние результаты)
+        """
+        form_data = {}
+        
+        try:
+            # Поиск формы команд в JSON
+            form_patterns = [
+                r'"homeTeamForm":\s*"([WDLWDL]*)"',
+                r'"awayTeamForm":\s*"([WDLWDL]*)"'
+            ]
+            
+            forms = []
+            for pattern in form_patterns:
+                match = re.search(pattern, page_text)
+                if match:
+                    forms.append(match.group(1))
+            
+            if len(forms) >= 2:
+                form_data = {
+                    'team1_form': forms[0],
+                    'team2_form': forms[1]
+                }
+                
+        except Exception as e:
+            self.logger.warning(f"Ошибка извлечения формы команд: {e}")
+        
+        return form_data
+    
+    def _extract_odds_data(self, page_text: str) -> Dict[str, Any]:
+        """
+        Извлечение коэффициентов
+        """
+        odds = {}
+        
+        try:
+            # Поиск основных коэффициентов 1X2
+            odds_pattern = r'"odds":\s*\{[^}]*"1":\s*([\d.]+)[^}]*"X":\s*([\d.]+)[^}]*"2":\s*([\d.]+)'
+            odds_match = re.search(odds_pattern, page_text)
+            
+            if odds_match:
+                odds['1X2'] = {
+                    '1': odds_match.group(1),
+                    'X': odds_match.group(2),
+                    '2': odds_match.group(3)
+                }
+                
+        except Exception as e:
+            self.logger.warning(f"Ошибка извлечения коэффициентов: {e}")
+        
+        return odds
+    
     def _remove_duplicates(self, matches: List[Dict[str, Any]], sport: str) -> List[Dict[str, Any]]:
         """
         Удаление дубликатов
