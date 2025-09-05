@@ -6,7 +6,7 @@ import re
 import time
 from selenium.webdriver.common.by import By
 from scrapers.base_scraper import BaseScraper
-from scrapers.maximum_scraper import MaximumScraper
+from scrapers.sofascore_scraper_v2 import SofaScoreScraperV2
 from config import HANDBALL_FILTER
 import math
 
@@ -17,7 +17,7 @@ class HandballScraper(BaseScraper):
     
     def __init__(self, logger):
         super().__init__(logger)
-        self.maximum_scraper = MaximumScraper(logger)
+        self.sofascore_scraper = SofaScoreScraperV2(logger)
     
     def get_live_matches(self, url: str) -> List[Dict[str, Any]]:
         """
@@ -27,7 +27,7 @@ class HandballScraper(BaseScraper):
         
         # Используем исправленный скрапер
         try:
-            matches = self.maximum_scraper.get_live_matches(url, 'handball')
+            matches = self.sofascore_scraper.get_live_matches('handball')
             self.logger.info(f"Найдено {len(matches)} гандбольных матчей")
             return matches
         except Exception as e:

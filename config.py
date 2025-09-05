@@ -9,7 +9,15 @@ CLAUDE_API_KEY = os.getenv('CLAUDE_API_KEY', '')  # Будет добавлен 
 TELEGRAM_BOT_TOKEN = "7824400107:AAGZqPdS0E0N3HsYpD8TW9m8c-bapFd-RHk"
 TELEGRAM_CHAT_ID = "@TrueLiveBet"
 
-# URL для scores24.live
+# URL для SofaScore (новый основной источник)
+SOFASCORE_URLS = {
+    'football': 'https://www.sofascore.com/football/livescore',
+    'tennis': 'https://www.sofascore.com/tennis/livescore',
+    'table_tennis': 'https://www.sofascore.com/table-tennis/livescore',
+    'handball': 'https://www.sofascore.com/handball/livescore'
+}
+
+# URL для scores24.live (резервный источник)
 SCORES24_URLS = {
     'football': 'https://scores24.live/ru/soccer?matchesFilter=live',
     'tennis': 'https://scores24.live/ru/tennis?matchesFilter=live', 

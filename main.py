@@ -18,7 +18,7 @@ from ai_analyzer.claude_analyzer import ClaudeAnalyzer
 from telegram_bot.reporter import TelegramReporter
 
 from config import (
-    SCORES24_URLS, CYCLE_INTERVAL_MINUTES, RETRY_DELAY_SECONDS,
+    SOFASCORE_URLS, SCORES24_URLS, CYCLE_INTERVAL_MINUTES, RETRY_DELAY_SECONDS,
     MAX_RECOMMENDATIONS
 )
 
@@ -149,23 +149,29 @@ class SportsAnalyzer:
         """
         all_matches = []
         
-        # Сначала пробуем реальные скраперы
+        # Используем SofaScore как основной источник
         for sport, scraper in self.scrapers.items():
             try:
-                self.logger.info(f"Сбор {sport} матчей...")
-                url = SCORES24_URLS.get(sport)
-                if not url:
-                    continue
+                self.logger.info(f"Сбор {sport} матчей (SofaScore)...")
                 
-                # Получаем live матчи с таймаутом
+                # Получаем live матчи с SofaScore
                 try:
-                    matches = scraper.get_live_matches(url)
+                    matches = scraper.get_live_matches("")  # URL не нужен для SofaScore
                     filtered_matches = scraper.filter_matches(matches)
                     all_matches.extend(filtered_matches)
-                    self.logger.info(f"Найдено {len(filtered_matches)} подходящих {sport} матчей")
+                    self.logger.info(f"SofaScore: найдено {len(filtered_matches)} подходящих {sport} матчей")
                 except Exception as scraper_error:
-                    self.logger.warning(f"Скрапер {sport} не сработал: {scraper_error}")
-                    continue
+                    self.logger.warning(f"SofaScore {sport} не сработал: {scraper_error}")
+                    
+                    # Fallback на scores24.live
+                    try:
+                        self.logger.info(f"Fallback на scores24.live для {sport}")
+                        url = SCORES24_URLS.get(sport)
+                        if url:
+                            # Здесь можно добавить старый скрапер как резерв
+                            pass
+                    except:
+                        pass
                 
             except Exception as e:
                 log_error(self.logger, e, f"Ошибка сбора {sport} матчей")

@@ -6,7 +6,7 @@ import re
 import time
 from selenium.webdriver.common.by import By
 from scrapers.base_scraper import BaseScraper
-from scrapers.maximum_scraper import MaximumScraper
+from scrapers.sofascore_scraper_v2 import SofaScoreScraperV2
 from config import TABLE_TENNIS_FILTER
 
 class TableTennisScraper(BaseScraper):
@@ -16,7 +16,7 @@ class TableTennisScraper(BaseScraper):
     
     def __init__(self, logger):
         super().__init__(logger)
-        self.maximum_scraper = MaximumScraper(logger)
+        self.sofascore_scraper = SofaScoreScraperV2(logger)
     
     def get_live_matches(self, url: str) -> List[Dict[str, Any]]:
         """
@@ -26,7 +26,7 @@ class TableTennisScraper(BaseScraper):
         
         # Используем исправленный скрапер
         try:
-            matches = self.maximum_scraper.get_live_matches(url, 'table_tennis')
+            matches = self.sofascore_scraper.get_live_matches('table_tennis')
             self.logger.info(f"Найдено {len(matches)} матчей настольного тенниса")
             return matches
         except Exception as e:
