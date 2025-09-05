@@ -7,7 +7,7 @@ import time
 from selenium.webdriver.common.by import By
 from scrapers.base_scraper import BaseScraper
 from scrapers.improved_scraper import ImprovedScraper
-from scrapers.real_scores24_scraper import RealScores24Scraper
+from scrapers.maximum_scraper import MaximumScraper
 from config import FOOTBALL_FILTER, TOP_LEAGUES
 
 class FootballScraper(BaseScraper):
@@ -18,7 +18,7 @@ class FootballScraper(BaseScraper):
     def __init__(self, logger):
         super().__init__(logger)
         self.improved_scraper = ImprovedScraper(logger)
-        self.real_scraper = RealScores24Scraper(logger)
+        self.maximum_scraper = MaximumScraper(logger)
     
     def get_live_matches(self, url: str) -> List[Dict[str, Any]]:
         """
@@ -28,7 +28,7 @@ class FootballScraper(BaseScraper):
         
         # Используем РАБОЧИЙ скрапер для реальных данных
         try:
-            matches = self.real_scraper.get_live_matches(url, 'football')
+            matches = self.maximum_scraper.get_live_matches(url, 'football')
             self.logger.info(f"Найдено {len(matches)} футбольных матчей")
             return matches
         except Exception as e:

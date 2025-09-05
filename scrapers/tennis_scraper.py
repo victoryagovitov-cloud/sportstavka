@@ -6,7 +6,7 @@ import re
 import time
 from selenium.webdriver.common.by import By
 from scrapers.base_scraper import BaseScraper
-from scrapers.real_scores24_scraper import RealScores24Scraper
+from scrapers.maximum_scraper import MaximumScraper
 from config import TENNIS_FILTER, TOP_LEAGUES
 
 class TennisScraper(BaseScraper):
@@ -16,7 +16,7 @@ class TennisScraper(BaseScraper):
     
     def __init__(self, logger):
         super().__init__(logger)
-        self.real_scraper = RealScores24Scraper(logger)
+        self.maximum_scraper = MaximumScraper(logger)
     
     def get_live_matches(self, url: str) -> List[Dict[str, Any]]:
         """
@@ -26,7 +26,7 @@ class TennisScraper(BaseScraper):
         
         # Используем исправленный скрапер
         try:
-            matches = self.real_scraper.get_live_matches(url, 'tennis')
+            matches = self.maximum_scraper.get_live_matches(url, 'tennis')
             self.logger.info(f"Найдено {len(matches)} теннисных матчей")
             return matches
         except Exception as e:
