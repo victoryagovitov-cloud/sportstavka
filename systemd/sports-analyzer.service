@@ -1,0 +1,28 @@
+[Unit]
+Description=Автоматизированный аналитик спортивных ставок
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/sports-analyzer
+Environment=PATH=/opt/sports-analyzer/venv/bin
+ExecStart=/opt/sports-analyzer/venv/bin/python /opt/sports-analyzer/run.py
+Restart=always
+RestartSec=10
+
+# Логирование
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sports-analyzer
+
+# Безопасность
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/sports-analyzer/logs
+
+[Install]
+WantedBy=multi-user.target

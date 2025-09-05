@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  sports-analyzer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: sports-analyzer
+    restart: unless-stopped
+    environment:
+      - CLAUDE_API_KEY=${CLAUDE_API_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - CYCLE_INTERVAL_MINUTES=${CYCLE_INTERVAL_MINUTES:-45}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - MAX_RECOMMENDATIONS=${MAX_RECOMMENDATIONS:-5}
+    volumes:
+      - ../logs:/app/logs
+      - /dev/shm:/dev/shm  # Для Chrome
+    networks:
+      - sports-analyzer-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  sports-analyzer-network:
+    driver: bridge
