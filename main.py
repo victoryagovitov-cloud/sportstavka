@@ -14,6 +14,7 @@ from scrapers.tennis_scraper import TennisScraper
 from scrapers.table_tennis_scraper import TableTennisScraper
 from scrapers.handball_scraper import HandballScraper
 from scrapers.sofascore_simple_quality import SofaScoreSimpleQuality
+from scrapers.multi_source_aggregator import MultiSourceAggregator
 from scrapers.demo_data_provider import demo_provider
 from ai_analyzer.claude_analyzer import ClaudeAnalyzer
 from telegram_bot.reporter import TelegramReporter
@@ -36,6 +37,9 @@ class SportsAnalyzer:
         # Инициализируем SofaScore скрапер для детальной статистики
         self.sofascore_scraper = SofaScoreSimpleQuality(self.logger)
         
+        # Инициализируем мульти-источник агрегатор
+        self.multi_source_aggregator = MultiSourceAggregator(self.logger)
+        
         self.scrapers = {
             'football': FootballScraper(self.logger),
             'tennis': TennisScraper(self.logger),
@@ -47,6 +51,33 @@ class SportsAnalyzer:
         self.telegram_reporter = TelegramReporter(self.logger)
         
         self.logger.info("Автоматизированный аналитик спортивных ставок инициализирован")
+    
+    def _basic_filter_matches(self, matches: List[Dict[str, Any]], sport: str) -> List[Dict[str, Any]]:
+        """
+        Базовая фильтрация матчей когда основной скрапер недоступен
+        """
+        filtered = []
+        
+        for match in matches:
+            # Базовые проверки
+            if not match.get('team1') or not match.get('team2'):
+                continue
+            
+            score = match.get('score', '0:0')
+            
+            # Проверяем что счет не ничейный для футбола и гандбола
+            if sport in ['football', 'handball']:
+                if ':' in score:
+                    parts = score.split(':')
+                    if len(parts) == 2 and parts[0].strip() == parts[1].strip():
+                        continue  # Пропускаем ничьи
+            
+            # Проверяем качество данных
+            data_quality = match.get('data_quality', 0.0)
+            if data_quality >= 0.5:  # Минимальное качество данных
+                filtered.append(match)
+        
+        return filtered
     
     def start(self):
         """
@@ -149,33 +180,43 @@ class SportsAnalyzer:
     
     def _collect_all_matches(self) -> List[Dict[str, Any]]:
         """
-        Сбор матчей по всем видам спорта
+        Сбор матчей по всем видам спорта с использованием мульти-источника
         """
         all_matches = []
         
-        # Используем SofaScore как основной источник
+        # Проверяем здоровье источников
+        source_health = self.multi_source_aggregator.get_source_health()
+        healthy_sources = [source for source, is_healthy in source_health.items() if is_healthy]
+        self.logger.info(f"Доступные источники: {', '.join(healthy_sources)}")
+        
+        # Используем мульти-источник агрегатор как основной метод
         for sport, scraper in self.scrapers.items():
             try:
-                self.logger.info(f"Сбор {sport} матчей (SofaScore)...")
+                self.logger.info(f"Сбор {sport} матчей (мульти-источник)...")
                 
-                # Получаем live матчи с SofaScore
+                # Получаем агрегированные матчи из всех источников
                 try:
-                    matches = scraper.get_live_matches("")  # URL не нужен для SofaScore
-                    filtered_matches = scraper.filter_matches(matches)
-                    all_matches.extend(filtered_matches)
-                    self.logger.info(f"SofaScore: найдено {len(filtered_matches)} подходящих {sport} матчей")
-                except Exception as scraper_error:
-                    self.logger.warning(f"SofaScore {sport} не сработал: {scraper_error}")
+                    aggregated_matches = self.multi_source_aggregator.get_aggregated_matches(sport, 'basic_info')
                     
-                    # Fallback на scores24.live
+                    if aggregated_matches:
+                        filtered_matches = scraper.filter_matches(aggregated_matches)
+                        all_matches.extend(filtered_matches)
+                        self.logger.info(f"Мульти-источник: найдено {len(filtered_matches)} подходящих {sport} матчей")
+                    else:
+                        self.logger.warning(f"Мульти-источник не вернул данные для {sport}")
+                        
+                except Exception as aggregator_error:
+                    self.logger.warning(f"Мульти-источник {sport} не сработал: {aggregator_error}")
+                    
+                    # Fallback на основной SofaScore скрапер
                     try:
-                        self.logger.info(f"Fallback на scores24.live для {sport}")
-                        url = SCORES24_URLS.get(sport)
-                        if url:
-                            # Здесь можно добавить старый скрапер как резерв
-                            pass
-                    except:
-                        pass
+                        self.logger.info(f"Fallback на SofaScore для {sport}")
+                        matches = scraper.get_live_matches("")
+                        filtered_matches = scraper.filter_matches(matches)
+                        all_matches.extend(filtered_matches)
+                        self.logger.info(f"SofaScore fallback: найдено {len(filtered_matches)} подходящих {sport} матчей")
+                    except Exception as sofascore_error:
+                        self.logger.warning(f"SofaScore fallback {sport} не сработал: {sofascore_error}")
                 
             except Exception as e:
                 log_error(self.logger, e, f"Ошибка сбора {sport} матчей")
