@@ -454,8 +454,10 @@ class TelegramReporter:
         """
         from datetime import datetime, timedelta
         from config import CYCLE_INTERVAL_MINUTES
+        from utils.time_utils import get_moscow_time
         
-        next_time = datetime.now() + timedelta(minutes=CYCLE_INTERVAL_MINUTES)
+        current_moscow_time = get_moscow_time()
+        next_time = current_moscow_time + timedelta(minutes=CYCLE_INTERVAL_MINUTES)
         return next_time.strftime('%H:%M МСК')
     
     def test_connection(self) -> bool:
