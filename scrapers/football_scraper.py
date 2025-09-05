@@ -6,6 +6,7 @@ import re
 import time
 from selenium.webdriver.common.by import By
 from scrapers.base_scraper import BaseScraper
+from scrapers.improved_scraper import ImprovedScraper
 from config import FOOTBALL_FILTER, TOP_LEAGUES
 
 class FootballScraper(BaseScraper):
@@ -13,77 +14,167 @@ class FootballScraper(BaseScraper):
     Скрапер для сбора данных футбольных матчей с scores24.live
     """
     
+    def __init__(self, logger):
+        super().__init__(logger)
+        self.improved_scraper = ImprovedScraper(logger)
+    
     def get_live_matches(self, url: str) -> List[Dict[str, Any]]:
         """
         Получение списка live футбольных матчей
         """
         self.logger.info(f"Сбор live футбольных матчей с {url}")
         
+        # Используем улучшенный скрапер с несколькими методами
         try:
-            self.setup_driver()
-            self.driver.get(url)
-            time.sleep(5)
-            
-            matches = []
-            
-            # Ищем все live матчи
-            match_elements = self.safe_find_elements(By.CSS_SELECTOR, "[data-testid='match']")
-            
-            for match_elem in match_elements:
-                try:
-                    match_data = self._extract_basic_match_info(match_elem)
-                    if match_data:
-                        matches.append(match_data)
-                except Exception as e:
-                    self.logger.warning(f"Ошибка извлечения данных матча: {e}")
-                    continue
-            
+            matches = self.improved_scraper.get_live_matches_multi_method(url, 'football')
             self.logger.info(f"Найдено {len(matches)} футбольных матчей")
             return matches
-            
         except Exception as e:
             self.logger.error(f"Ошибка получения футбольных матчей: {e}")
             return []
-        finally:
-            self.close_driver()
     
     def _extract_basic_match_info(self, match_elem) -> Dict[str, Any]:
         """
         Извлечение базовой информации о матче
         """
-        # Команды
-        teams = self.safe_find_elements(match_elem, By.CSS_SELECTOR, "[data-testid='team-name']")
-        if len(teams) < 2:
+        try:
+            # Получаем весь текст элемента для анализа
+            full_text = self.safe_get_text(match_elem)
+            
+            # Пробуем различные селекторы для команд
+            team_selectors = [
+                "[data-testid='team-name']",
+                ".team-name",
+                "[class*='team']",
+                "[class*='participant']",
+                "td",  # Ячейки таблицы
+                "span",
+                "div"
+            ]
+            
+            teams = []
+            for selector in team_selectors:
+                team_elements = match_elem.find_elements(By.CSS_SELECTOR, selector)
+                for elem in team_elements:
+                    text = self.safe_get_text(elem)
+                    if text and len(text) > 2 and len(text) < 50:
+                        teams.append(text)
+                if len(teams) >= 2:
+                    break
+            
+            # Если не нашли команды через селекторы, парсим из текста
+            if len(teams) < 2 and full_text:
+                # Ищем паттерны: "Команда1 - Команда2", "Команда1 vs Команда2"
+                import re
+                patterns = [
+                    r'(.+?)\s*-\s*(.+?)(?:\s|$)',
+                    r'(.+?)\s*vs\s*(.+?)(?:\s|$)', 
+                    r'(.+?)\s*:\s*(.+?)(?:\s|$)'
+                ]
+                
+                for pattern in patterns:
+                    match = re.search(pattern, full_text, re.IGNORECASE)
+                    if match:
+                        teams = [match.group(1).strip(), match.group(2).strip()]
+                        break
+            
+            if len(teams) < 2:
+                return None
+            
+            team1, team2 = teams[0], teams[1]
+            
+            # Ищем счет
+            score_selectors = [
+                "[data-testid='match-score']",
+                "[class*='score']",
+                "[class*='result']"
+            ]
+            
+            score = ""
+            for selector in score_selectors:
+                score_elem = match_elem.find_elements(By.CSS_SELECTOR, selector)
+                if score_elem:
+                    score = self.safe_get_text(score_elem[0])
+                    if score and re.match(r'\d+[:-]\d+', score):
+                        break
+            
+            # Если не нашли через селекторы, ищем в тексте
+            if not score and full_text:
+                score_match = re.search(r'(\d+[:-]\d+)', full_text)
+                if score_match:
+                    score = score_match.group(1)
+            
+            # Ищем время матча
+            time_selectors = [
+                "[data-testid='match-time']",
+                "[class*='time']",
+                "[class*='minute']"
+            ]
+            
+            match_time = ""
+            for selector in time_selectors:
+                time_elem = match_elem.find_elements(By.CSS_SELECTOR, selector)
+                if time_elem:
+                    match_time = self.safe_get_text(time_elem[0])
+                    if match_time and ("'" in match_time or "мин" in match_time.lower()):
+                        break
+            
+            # Если не нашли через селекторы, ищем в тексте
+            if not match_time and full_text:
+                time_match = re.search(r"(\d+['мин])", full_text)
+                if time_match:
+                    match_time = time_match.group(1)
+            
+            # Ищем лигу
+            league = "Неизвестная лига"
+            league_elem = match_elem.find_element(By.XPATH, "ancestor::*[contains(@class, 'league') or contains(@class, 'tournament')]") if match_elem else None
+            if league_elem:
+                league = self.safe_get_text(league_elem)[:50]  # Ограничиваем длину
+            
+            # URL матча
+            match_link = match_elem.find_element(By.TAG_NAME, "a") if match_elem.tag_name != "a" else match_elem
+            match_url = self.safe_get_attribute(match_link, "href") if match_link else ""
+            
+            return {
+                'team1': team1,
+                'team2': team2,
+                'score': score or "0:0",
+                'time': match_time or "0'",
+                'league': league,
+                'url': match_url,
+                'sport': 'football',
+                'raw_text': full_text[:100]  # Для отладки
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Ошибка извлечения данных: {e}")
             return None
+    
+    def _is_valid_match(self, match_data: Dict[str, Any]) -> bool:
+        """
+        Проверка, является ли извлеченная информация валидным матчем
+        """
+        if not match_data:
+            return False
         
-        team1 = self.safe_get_text(teams[0])
-        team2 = self.safe_get_text(teams[1])
+        # Проверяем наличие команд
+        team1 = match_data.get('team1', '').strip()
+        team2 = match_data.get('team2', '').strip()
         
-        # Счет
-        score_elem = self.safe_find_element(match_elem, By.CSS_SELECTOR, "[data-testid='match-score']")
-        score = self.safe_get_text(score_elem)
+        if not team1 or not team2 or len(team1) < 2 or len(team2) < 2:
+            return False
         
-        # Время
-        time_elem = self.safe_find_element(match_elem, By.CSS_SELECTOR, "[data-testid='match-time']")
-        match_time = self.safe_get_text(time_elem)
+        # Команды не должны быть одинаковыми
+        if team1.lower() == team2.lower():
+            return False
         
-        # Лига
-        league_elem = self.safe_find_element(match_elem, By.CSS_SELECTOR, "[data-testid='league-name']")
-        league = self.safe_get_text(league_elem)
+        # Проверяем, что это не служебная информация
+        invalid_keywords = ['реклама', 'бонус', 'ставка', 'коэффициент', 'live', 'результаты']
+        for keyword in invalid_keywords:
+            if keyword in team1.lower() or keyword in team2.lower():
+                return False
         
-        # URL матча
-        match_link = self.safe_find_element(match_elem, By.CSS_SELECTOR, "a")
-        match_url = self.safe_get_attribute(match_link, "href") if match_link else ""
-        
-        return {
-            'team1': team1,
-            'team2': team2,
-            'score': score,
-            'time': match_time,
-            'league': league,
-            'url': match_url,
-            'sport': 'football'
-        }
+        return True
     
     def filter_matches(self, matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """

@@ -35,7 +35,7 @@ class BaseScraper(ABC):
         
         service = Service(CHROMEDRIVER_PATH)
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
-        self.wait = WebDriverWait(self.driver, 10)
+        self.wait = WebDriverWait(self.driver, 20)  # Увеличиваем время ожидания
         return self.driver
     
     def close_driver(self):
