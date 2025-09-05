@@ -344,7 +344,7 @@ class SofaScoreSimpleQuality:
         
         return stats
     
-    def get_detailed_match_data(self, match_url: str) -> Dict[str, Any]:
+    def get_detailed_match_data(self, match_url: str, sport: str = 'football') -> Dict[str, Any]:
         """
         Получение детальных данных матча с SofaScore
         """
@@ -359,12 +359,24 @@ class SofaScoreSimpleQuality:
             page_text = response.text
             detailed_data = {}
             
+            # Определяем вид спорта из URL если не передан
+            if sport == 'football' and match_url:
+                if '/tennis/' in match_url:
+                    sport = 'tennis'
+                elif '/handball/' in match_url:
+                    sport = 'handball'
+                elif '/table-tennis/' in match_url:
+                    sport = 'table_tennis'
+                elif '/basketball/' in match_url:
+                    sport = 'basketball'
+            
             # Базовые данные матча
             basic_data = self._get_basic_match_data(match_url)
             detailed_data.update(basic_data)
+            detailed_data['sport'] = sport
             
-            # Расширенная статистика
-            detailed_stats = self._extract_detailed_statistics(page_text)
+            # Расширенная статистика с учетом вида спорта
+            detailed_stats = self._extract_detailed_statistics(page_text, sport)
             if detailed_stats:
                 detailed_data['detailed_statistics'] = detailed_stats
             
@@ -389,9 +401,9 @@ class SofaScoreSimpleQuality:
             self.logger.error(f"Ошибка сбора детальных данных {match_url}: {e}")
             return {}
     
-    def _extract_detailed_statistics(self, page_text: str) -> Dict[str, Any]:
+    def _extract_detailed_statistics(self, page_text: str, sport: str = 'football') -> Dict[str, Any]:
         """
-        Извлечение детальной статистики матча
+        Извлечение детальной статистики матча с учетом вида спорта
         """
         stats = {}
         
@@ -422,31 +434,97 @@ class SofaScoreSimpleQuality:
                 except:
                     pass
             
-            # Если JSON не найден, используем регулярные выражения
+            # Если JSON не найден, используем спорт-специфичные паттерны
             if not stats:
-                stat_patterns = {
-                    'possession': r'(\d{1,2})%.*?(\d{1,2})%',
-                    'shots_total': r'"shotsTotal":\s*(\d+).*?"shotsTotal":\s*(\d+)',
-                    'shots_on_target': r'"shotsOnTarget":\s*(\d+).*?"shotsOnTarget":\s*(\d+)',
-                    'corners': r'"cornerKicks":\s*(\d+).*?"cornerKicks":\s*(\d+)',
-                    'fouls': r'"fouls":\s*(\d+).*?"fouls":\s*(\d+)',
-                    'yellow_cards': r'"yellowCards":\s*(\d+).*?"yellowCards":\s*(\d+)',
-                    'red_cards': r'"redCards":\s*(\d+).*?"redCards":\s*(\d+)',
-                    'offsides': r'"offsides":\s*(\d+).*?"offsides":\s*(\d+)',
-                    'passes': r'"passes":\s*(\d+).*?"passes":\s*(\d+)',
-                    'pass_accuracy': r'"passAccuracy":\s*(\d+).*?"passAccuracy":\s*(\d+)',
-                }
-                
-                for stat_name, pattern in stat_patterns.items():
-                    match = re.search(pattern, page_text)
-                    if match and len(match.groups()) >= 2:
-                        stats[stat_name] = {
-                            'team1': match.group(1),
-                            'team2': match.group(2)
-                        }
+                stats = self._extract_sport_specific_stats(page_text, sport)
             
         except Exception as e:
             self.logger.warning(f"Ошибка извлечения детальной статистики: {e}")
+        
+        return stats
+    
+    def _extract_sport_specific_stats(self, page_text: str, sport: str) -> Dict[str, Any]:
+        """
+        Извлечение статистики специфичной для каждого вида спорта
+        """
+        stats = {}
+        
+        if sport == 'football':
+            stat_patterns = {
+                'possession': r'(\d{1,2})%.*?(\d{1,2})%',
+                'shots_total': r'"shotsTotal":\s*(\d+).*?"shotsTotal":\s*(\d+)',
+                'shots_on_target': r'"shotsOnTarget":\s*(\d+).*?"shotsOnTarget":\s*(\d+)',
+                'corners': r'"cornerKicks":\s*(\d+).*?"cornerKicks":\s*(\d+)',
+                'fouls': r'"fouls":\s*(\d+).*?"fouls":\s*(\d+)',
+                'yellow_cards': r'"yellowCards":\s*(\d+).*?"yellowCards":\s*(\d+)',
+                'red_cards': r'"redCards":\s*(\d+).*?"redCards":\s*(\d+)',
+                'offsides': r'"offsides":\s*(\d+).*?"offsides":\s*(\d+)',
+                'passes': r'"passes":\s*(\d+).*?"passes":\s*(\d+)',
+                'pass_accuracy': r'"passAccuracy":\s*(\d+).*?"passAccuracy":\s*(\d+)',
+            }
+        
+        elif sport == 'tennis':
+            stat_patterns = {
+                'aces': r'"aces":\s*(\d+).*?"aces":\s*(\d+)',
+                'double_faults': r'"doubleFaults":\s*(\d+).*?"doubleFaults":\s*(\d+)',
+                'first_serve': r'"firstServe":\s*(\d+).*?"firstServe":\s*(\d+)',
+                'first_serve_won': r'"firstServeWon":\s*(\d+).*?"firstServeWon":\s*(\d+)',
+                'second_serve_won': r'"secondServeWon":\s*(\d+).*?"secondServeWon":\s*(\d+)',
+                'break_points_saved': r'"breakPointsSaved":\s*(\d+).*?"breakPointsSaved":\s*(\d+)',
+                'break_points_converted': r'"breakPointsConverted":\s*(\d+).*?"breakPointsConverted":\s*(\d+)',
+                'winners': r'"winners":\s*(\d+).*?"winners":\s*(\d+)',
+                'unforced_errors': r'"unforcedErrors":\s*(\d+).*?"unforcedErrors":\s*(\d+)',
+                'total_points': r'"totalPoints":\s*(\d+).*?"totalPoints":\s*(\d+)',
+            }
+        
+        elif sport == 'handball':
+            stat_patterns = {
+                'shots': r'"shots":\s*(\d+).*?"shots":\s*(\d+)',
+                'shots_on_target': r'"shotsOnTarget":\s*(\d+).*?"shotsOnTarget":\s*(\d+)',
+                'goals': r'"goals":\s*(\d+).*?"goals":\s*(\d+)',
+                'saves': r'"saves":\s*(\d+).*?"saves":\s*(\d+)',
+                'assists': r'"assists":\s*(\d+).*?"assists":\s*(\d+)',
+                'steals': r'"steals":\s*(\d+).*?"steals":\s*(\d+)',
+                'blocks': r'"blocks":\s*(\d+).*?"blocks":\s*(\d+)',
+                'turnovers': r'"turnovers":\s*(\d+).*?"turnovers":\s*(\d+)',
+                'yellow_cards': r'"yellowCards":\s*(\d+).*?"yellowCards":\s*(\d+)',
+                'red_cards': r'"redCards":\s*(\d+).*?"redCards":\s*(\d+)',
+                'two_minutes': r'"twoMinutes":\s*(\d+).*?"twoMinutes":\s*(\d+)',
+            }
+        
+        elif sport == 'table_tennis':
+            stat_patterns = {
+                'points_won': r'"pointsWon":\s*(\d+).*?"pointsWon":\s*(\d+)',
+                'service_points': r'"servicePoints":\s*(\d+).*?"servicePoints":\s*(\d+)',
+                'return_points': r'"returnPoints":\s*(\d+).*?"returnPoints":\s*(\d+)',
+                'winners': r'"winners":\s*(\d+).*?"winners":\s*(\d+)',
+                'errors': r'"errors":\s*(\d+).*?"errors":\s*(\d+)',
+                'longest_rally': r'"longestRally":\s*(\d+).*?"longestRally":\s*(\d+)',
+            }
+        
+        else:
+            # Базовые паттерны для неизвестных видов спорта
+            stat_patterns = {
+                'score_team1': r'"homeScore":\s*(\d+)',
+                'score_team2': r'"awayScore":\s*(\d+)',
+            }
+        
+        # Применяем паттерны
+        for stat_name, pattern in stat_patterns.items():
+            match = re.search(pattern, page_text)
+            if match and len(match.groups()) >= 2:
+                stats[stat_name] = {
+                    'team1': match.group(1),
+                    'team2': match.group(2)
+                }
+            elif match and len(match.groups()) == 1:
+                # Для паттернов с одним значением
+                if 'team1' in stat_name:
+                    if 'score_team1' not in stats:
+                        stats['score_team1'] = {'team1': match.group(1), 'team2': '0'}
+                elif 'team2' in stat_name:
+                    if 'score_team2' not in stats:
+                        stats['score_team2'] = {'team1': '0', 'team2': match.group(1)}
         
         return stats
     
