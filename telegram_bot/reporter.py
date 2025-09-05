@@ -144,10 +144,10 @@ class TelegramReporter:
         
         lines = [
             f"{index}. ⚽ {team1} – {team2}",
-            f"🏟️ Счет: *{score}* ({time}) | До конца: {remaining_time} | Лига: {league}",
-            f"✅ Ставка: *{bet_recommendation}*",
-            f"📊 Кэф: *{odds}*",
-            f"📌 _{analysis}_"
+            f"🏟️ Счет: <b>{score}</b> ({time}) | До конца: {remaining_time} | Лига: {league}",
+            f"✅ Ставка: <b>{bet_recommendation}</b>",
+            f"📊 Кэф: <b>{odds}</b>",
+            f"📌 <i>{analysis}</i>"
         ]
         
         return "\n".join(lines)
@@ -172,9 +172,9 @@ class TelegramReporter:
         lines = [
             f"{index}. 🎾 {player1} – {player2}",
             f"🎯 Счет: {sets_score} ({current_set}) | Турнир: {tournament}",
-            f"✅ Ставка: *{bet_recommendation}*",
-            f"📊 Кэф: *{odds}*",
-            f"📌 _{analysis}_"
+            f"✅ Ставка: <b>{bet_recommendation}</b>",
+            f"📊 Кэф: <b>{odds}</b>",
+            f"📌 <i>{analysis}</i>"
         ]
         
         return "\n".join(lines)
@@ -199,9 +199,9 @@ class TelegramReporter:
         lines = [
             f"{index}. 🏓 {player1} – {player2}",
             f"🎯 Счет: {sets_score} ({current_set}) | Турнир: {tournament}",
-            f"✅ Ставка: *{bet_recommendation}*",
-            f"📊 Кэф: *{odds}*",
-            f"📌 _{analysis}_"
+            f"✅ Ставка: <b>{bet_recommendation}</b>",
+            f"📊 Кэф: <b>{odds}</b>",
+            f"📌 <i>{analysis}</i>"
         ]
         
         return "\n".join(lines)
@@ -237,10 +237,10 @@ class TelegramReporter:
         
         lines = [
             f"{index}. 🤾 {team1} – {team2}",
-            f"🏟️ Счет: *{score}* ({time})",
-            f"📈 Прогнозный тотал: *{predicted_total}* голов",
-            f"🎯 Рекомендация: *{recommendation}*",
-            f"📌 _{reasoning}_"
+            f"🏟️ Счет: <b>{score}</b> ({time})",
+            f"📈 Прогнозный тотал: <b>{predicted_total}</b> голов",
+            f"🎯 Рекомендация: <b>{recommendation}</b>",
+            f"📌 <i>{reasoning}</i>"
         ]
         
         return "\n".join(lines)
@@ -263,10 +263,10 @@ class TelegramReporter:
         
         lines = [
             f"{index}. 🤾 {team1} – {team2}",
-            f"🏟️ Счет: *{score}* ({time})",
-            f"✅ Ставка: *{bet_recommendation}*",
-            f"📊 Кэф: *{odds}*",
-            f"📌 _{analysis}_"
+            f"🏟️ Счет: <b>{score}</b> ({time})",
+            f"✅ Ставка: <b>{bet_recommendation}</b>",
+            f"📊 Кэф: <b>{odds}</b>",
+            f"📌 <i>{analysis}</i>"
         ]
         
         return "\n".join(lines)
@@ -282,8 +282,8 @@ class TelegramReporter:
         
         lines = [
             f"{index}. 🏆 {participants}",
-            f"🎯 Счет: *{score}*",
-            f"📌 _{analysis}_"
+            f"🎯 Счет: <b>{score}</b>",
+            f"📌 <i>{analysis}</i>"
         ]
         
         return "\n".join(lines)
@@ -400,13 +400,10 @@ class TelegramReporter:
         Отправка сообщения в Telegram
         """
         try:
-            # Экранируем специальные символы для MarkdownV2
-            escaped_text = self._escape_markdown_v2(text)
-            
             payload = {
                 'chat_id': self.chat_id,
-                'text': escaped_text,
-                'parse_mode': 'MarkdownV2'
+                'text': text,
+                'parse_mode': 'HTML'
             }
             
             response = requests.post(f"{self.api_url}/sendMessage", json=payload)
@@ -427,7 +424,7 @@ class TelegramReporter:
         Экранирование специальных символов для MarkdownV2
         """
         # Символы, которые нужно экранировать в MarkdownV2
-        escape_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+        escape_chars = ['_', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
         
         for char in escape_chars:
             text = text.replace(char, f'\\{char}')
@@ -442,11 +439,11 @@ class TelegramReporter:
         next_check_time = self._calculate_next_check_time()
         
         message = f"""
-🔍 На текущий момент подходящих LIVE\\-событий не найдено\\.
+🔍 На текущий момент подходящих LIVE-событий не найдено.
 
 ⏰ Следующая проверка в {next_check_time}
 
-💎 @TrueLiveBet – Анализ на основе AI и статистики\\!
+💎 @TrueLiveBet – Анализ на основе AI и статистики!
         """.strip()
         
         return self._send_message(message)

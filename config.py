@@ -24,8 +24,11 @@ SELENIUM_OPTIONS = [
     '--disable-dev-shm-usage',
     '--disable-gpu',
     '--window-size=1920,1080',
-    '--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    '--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.7339.80 Safari/537.36'
 ]
+
+# Путь к ChromeDriver
+CHROMEDRIVER_PATH = '/usr/local/bin/chromedriver'
 
 # Временные настройки
 CYCLE_INTERVAL_MINUTES = 45

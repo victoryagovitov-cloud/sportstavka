@@ -6,13 +6,14 @@ from typing import List, Dict, Any, Optional
 import requests
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import time
 import logging
-from config import SELENIUM_OPTIONS
+from config import SELENIUM_OPTIONS, CHROMEDRIVER_PATH
 
 class BaseScraper(ABC):
     """
@@ -32,7 +33,8 @@ class BaseScraper(ABC):
         for option in SELENIUM_OPTIONS:
             chrome_options.add_argument(option)
         
-        self.driver = webdriver.Chrome(options=chrome_options)
+        service = Service(CHROMEDRIVER_PATH)
+        self.driver = webdriver.Chrome(service=service, options=chrome_options)
         self.wait = WebDriverWait(self.driver, 10)
         return self.driver
     
