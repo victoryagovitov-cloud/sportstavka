@@ -395,6 +395,16 @@ class SofaScoreSimpleQuality:
             if odds_data:
                 detailed_data['odds'] = odds_data
             
+            # Турнирные данные и рейтинги
+            tournament_data = self._extract_tournament_data(page_text, sport)
+            if tournament_data:
+                detailed_data['tournament_info'] = tournament_data
+            
+            # Статистика команд/игроков
+            team_stats = self._extract_team_statistics(page_text, sport)
+            if team_stats:
+                detailed_data['team_statistics'] = team_stats
+            
             return detailed_data
             
         except Exception as e:
@@ -613,6 +623,219 @@ class SofaScoreSimpleQuality:
             self.logger.warning(f"Ошибка извлечения коэффициентов: {e}")
         
         return odds
+    
+    def _extract_tournament_data(self, page_text: str, sport: str) -> Dict[str, Any]:
+        """
+        Извлечение турнирных данных и позиций команд/игроков
+        """
+        tournament_info = {}
+        
+        try:
+            if sport == 'football':
+                # Позиции команд в турнирной таблице
+                position_patterns = [
+                    r'"homeTeam":[^}]*"position":\s*(\d+)',
+                    r'"awayTeam":[^}]*"position":\s*(\d+)',
+                    r'"tablePosition":\s*(\d+).*?"tablePosition":\s*(\d+)',
+                ]
+                
+                positions = []
+                for pattern in position_patterns:
+                    matches = re.findall(pattern, page_text)
+                    if matches:
+                        positions.extend(matches[:2])
+                
+                if len(positions) >= 2:
+                    tournament_info['table_positions'] = {
+                        'team1_position': positions[0],
+                        'team2_position': positions[1]
+                    }
+                
+                # Очки в турнире
+                points_patterns = [
+                    r'"homeTeam":[^}]*"points":\s*(\d+)',
+                    r'"awayTeam":[^}]*"points":\s*(\d+)',
+                    r'"tournamentPoints":\s*(\d+).*?"tournamentPoints":\s*(\d+)',
+                ]
+                
+                points = []
+                for pattern in points_patterns:
+                    matches = re.findall(pattern, page_text)
+                    if matches:
+                        points.extend(matches[:2])
+                
+                if len(points) >= 2:
+                    tournament_info['tournament_points'] = {
+                        'team1_points': points[0],
+                        'team2_points': points[1]
+                    }
+            
+            elif sport == 'tennis':
+                # ATP/WTA рейтинги
+                ranking_patterns = [
+                    r'"homePlayer":[^}]*"ranking":\s*(\d+)',
+                    r'"awayPlayer":[^}]*"ranking":\s*(\d+)',
+                    r'"atpRanking":\s*(\d+).*?"atpRanking":\s*(\d+)',
+                    r'"wtaRanking":\s*(\d+).*?"wtaRanking":\s*(\d+)',
+                ]
+                
+                rankings = []
+                for pattern in ranking_patterns:
+                    matches = re.findall(pattern, page_text)
+                    if matches:
+                        rankings.extend(matches[:2])
+                
+                if len(rankings) >= 2:
+                    tournament_info['player_rankings'] = {
+                        'player1_ranking': rankings[0],
+                        'player2_ranking': rankings[1]
+                    }
+                
+                # Очки рейтинга
+                rating_points_pattern = r'"rankingPoints":\s*(\d+).*?"rankingPoints":\s*(\d+)'
+                rating_points = re.findall(rating_points_pattern, page_text)
+                if rating_points:
+                    tournament_info['ranking_points'] = {
+                        'player1_points': rating_points[0][0],
+                        'player2_points': rating_points[0][1]
+                    }
+            
+            elif sport == 'handball':
+                # Позиции в лиге
+                position_patterns = [
+                    r'"homeTeam":[^}]*"leaguePosition":\s*(\d+)',
+                    r'"awayTeam":[^}]*"leaguePosition":\s*(\d+)',
+                ]
+                
+                positions = []
+                for pattern in position_patterns:
+                    matches = re.findall(pattern, page_text)
+                    if matches:
+                        positions.extend(matches[:2])
+                
+                if len(positions) >= 2:
+                    tournament_info['league_positions'] = {
+                        'team1_position': positions[0],
+                        'team2_position': positions[1]
+                    }
+                    
+        except Exception as e:
+            self.logger.warning(f"Ошибка извлечения турнирных данных: {e}")
+        
+        return tournament_info
+    
+    def _extract_team_statistics(self, page_text: str, sport: str) -> Dict[str, Any]:
+        """
+        Извлечение статистики команд/игроков (средние показатели)
+        """
+        team_stats = {}
+        
+        try:
+            if sport == 'football':
+                # Средние голы за матч
+                avg_goals_patterns = [
+                    r'"homeTeam":[^}]*"avgGoals":\s*([\d.]+)',
+                    r'"awayTeam":[^}]*"avgGoals":\s*([\d.]+)',
+                    r'"goalsPerGame":\s*([\d.]+).*?"goalsPerGame":\s*([\d.]+)',
+                    r'"averageGoals":\s*([\d.]+).*?"averageGoals":\s*([\d.]+)',
+                ]
+                
+                avg_goals = []
+                for pattern in avg_goals_patterns:
+                    matches = re.findall(pattern, page_text)
+                    if matches:
+                        if isinstance(matches[0], tuple):
+                            avg_goals.extend(matches[0])
+                        else:
+                            avg_goals.extend(matches[:2])
+                
+                if len(avg_goals) >= 2:
+                    team_stats['average_goals'] = {
+                        'team1_avg_goals': avg_goals[0],
+                        'team2_avg_goals': avg_goals[1]
+                    }
+                
+                # Средние пропущенные голы
+                avg_conceded_patterns = [
+                    r'"homeTeam":[^}]*"avgConceded":\s*([\d.]+)',
+                    r'"awayTeam":[^}]*"avgConceded":\s*([\d.]+)',
+                    r'"goalsConcededPerGame":\s*([\d.]+).*?"goalsConcededPerGame":\s*([\d.]+)',
+                ]
+                
+                avg_conceded = []
+                for pattern in avg_conceded_patterns:
+                    matches = re.findall(pattern, page_text)
+                    if matches:
+                        if isinstance(matches[0], tuple):
+                            avg_conceded.extend(matches[0])
+                        else:
+                            avg_conceded.extend(matches[:2])
+                
+                if len(avg_conceded) >= 2:
+                    team_stats['average_conceded'] = {
+                        'team1_avg_conceded': avg_conceded[0],
+                        'team2_avg_conceded': avg_conceded[1]
+                    }
+                
+                # Процент побед
+                win_rate_patterns = [
+                    r'"homeTeam":[^}]*"winRate":\s*([\d.]+)',
+                    r'"awayTeam":[^}]*"winRate":\s*([\d.]+)',
+                    r'"winPercentage":\s*([\d.]+).*?"winPercentage":\s*([\d.]+)',
+                ]
+                
+                win_rates = []
+                for pattern in win_rate_patterns:
+                    matches = re.findall(pattern, page_text)
+                    if matches:
+                        if isinstance(matches[0], tuple):
+                            win_rates.extend(matches[0])
+                        else:
+                            win_rates.extend(matches[:2])
+                
+                if len(win_rates) >= 2:
+                    team_stats['win_percentage'] = {
+                        'team1_win_rate': f"{win_rates[0]}%",
+                        'team2_win_rate': f"{win_rates[1]}%"
+                    }
+            
+            elif sport == 'tennis':
+                # Статистика игроков
+                player_stats_patterns = {
+                    'titles_won': r'"titlesWon":\s*(\d+).*?"titlesWon":\s*(\d+)',
+                    'matches_played': r'"matchesPlayed":\s*(\d+).*?"matchesPlayed":\s*(\d+)',
+                    'win_percentage': r'"winPercentage":\s*([\d.]+).*?"winPercentage":\s*([\d.]+)',
+                    'prize_money': r'"prizeMoney":\s*(\d+).*?"prizeMoney":\s*(\d+)',
+                }
+                
+                for stat_name, pattern in player_stats_patterns.items():
+                    matches = re.findall(pattern, page_text)
+                    if matches and len(matches[0]) >= 2:
+                        team_stats[stat_name] = {
+                            'player1': matches[0][0],
+                            'player2': matches[0][1]
+                        }
+            
+            elif sport == 'handball':
+                # Статистика гандбольных команд
+                handball_stats_patterns = {
+                    'average_goals': r'"avgGoals":\s*([\d.]+).*?"avgGoals":\s*([\d.]+)',
+                    'average_saves': r'"avgSaves":\s*([\d.]+).*?"avgSaves":\s*([\d.]+)',
+                    'win_percentage': r'"winRate":\s*([\d.]+).*?"winRate":\s*([\d.]+)',
+                }
+                
+                for stat_name, pattern in handball_stats_patterns.items():
+                    matches = re.findall(pattern, page_text)
+                    if matches and len(matches[0]) >= 2:
+                        team_stats[stat_name] = {
+                            'team1': matches[0][0],
+                            'team2': matches[0][1]
+                        }
+                        
+        except Exception as e:
+            self.logger.warning(f"Ошибка извлечения статистики команд: {e}")
+        
+        return team_stats
     
     def _remove_duplicates(self, matches: List[Dict[str, Any]], sport: str) -> List[Dict[str, Any]]:
         """
