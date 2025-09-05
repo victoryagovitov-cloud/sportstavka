@@ -5,6 +5,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 from typing import List, Dict, Any
+from scrapers.simple_tt_parser import parse_table_tennis_simple
 
 class MaximumScraper:
     """
@@ -13,6 +14,9 @@ class MaximumScraper:
     
     def __init__(self, logger):
         self.logger = logger
+        
+        # Простой парсер для настольного тенниса
+        self.simple_tt_parser = parse_table_tennis_simple
         
         # Словари для улучшенного разделения команд
         self.country_endings = [
@@ -80,6 +84,12 @@ class MaximumScraper:
             league_match = re.search(r'^([^(]+)', text)
             league_name = league_match.group(1).strip() if league_match else "Неизвестная лига"
             
+            # Специальная обработка для настольного тенниса
+            if sport == 'table_tennis':
+                tt_matches = parse_table_tennis_simple(text, league_name)
+                matches.extend(tt_matches)
+                continue  # Пропускаем стандартную обработку для настольного тенниса
+            
             # Улучшенные паттерны для разных видов спорта
             if sport == 'football':
                 patterns = [
@@ -96,9 +106,12 @@ class MaximumScraper:
                 ]
             elif sport == 'table_tennis':
                 patterns = [
-                    # Настольный теннис: партия+игроки+счет
-                    r'(\d{1,2}-я партия)([А-Яа-яA-Za-z\s\.\-\']{6,60}?)(\d{1,2})(\d{1,2})',
-                    r'(\d{2}:\d{2})(\d{1,2}-я партия)([А-Яа-яA-Za-z\s\.\-\']{6,60}?)(\d{1,2})(\d{1,2})'
+                    # Настольный теннис: время+партия+игроки+счет
+                    r'(\d{2}:\d{2})(\d{1,2}-я партия)([А-Яа-яA-Za-z\s\.\-\',]{6,60}?)(\d{1,2})(\d{1,2})',
+                    # Только партия+игроки+счет
+                    r'(\d{1,2}-я партия)([А-Яа-яA-Za-z\s\.\-\',]{6,60}?)(\d{1,2})(\d{1,2})',
+                    # Простой паттерн: игрок1+игрок2+счет
+                    r'([А-Я][а-яё\s]{3,25})([А-Я][а-яё\s]{3,25})(\d{1,2})(\d{1,2})'
                 ]
             else:  # handball
                 patterns = [
@@ -149,24 +162,50 @@ class MaximumScraper:
                         
             elif sport in ['tennis', 'table_tennis']:
                 if len(match_tuple) >= 4:
-                    set_info, players_text, s1, s2 = match_tuple[:4]
+                    # Для настольного тенниса может быть разная структура
+                    if len(match_tuple) == 5:  # время+партия+игроки+счет
+                        start_time, set_info, players_text, s1, s2 = match_tuple
+                    elif len(match_tuple) == 4:  # партия+игроки+счет ИЛИ игрок1+игрок2+счет
+                        if 'партия' in str(match_tuple[0]):
+                            set_info, players_text, s1, s2 = match_tuple
+                            start_time = '20:00'  # Fallback
+                        else:
+                            # Простой паттерн: игрок1+игрок2+счет
+                            player1, player2, s1, s2 = match_tuple
+                            start_time = '20:00'
+                            set_info = '1-я партия'
+                            
+                            if player1 and player2:
+                                return {
+                                    'player1': player1,
+                                    'player2': player2,
+                                    'sets_score': f"{s1}:{s2}",
+                                    'current_set': set_info,
+                                    'tournament': league_name,
+                                    'url': '',
+                                    'sport': sport,
+                                    'source': 'maximum_scraper'
+                                }
+                    else:
+                        return None
                     
-                    # Разделяем игроков
-                    player1, player2 = self._smart_split_teams(players_text)
-                    
-                    if player1 and player2:
-                        score = f"{s1}:{s2}"
+                    # Разделяем игроков (если есть players_text)
+                    if 'players_text' in locals():
+                        player1, player2 = self._smart_split_teams(players_text)
                         
-                        return {
-                            'player1': player1,
-                            'player2': player2,
-                            'sets_score': score,
-                            'current_set': set_info,
-                            'tournament': league_name,
-                            'url': '',
-                            'sport': sport,
-                            'source': 'maximum_scraper'
-                        }
+                        if player1 and player2:
+                            score = f"{s1}:{s2}"
+                            
+                            return {
+                                'player1': player1,
+                                'player2': player2,
+                                'sets_score': score,
+                                'current_set': set_info,
+                                'tournament': league_name,
+                                'url': '',
+                                'sport': sport,
+                                'source': 'maximum_scraper'
+                            }
                         
             elif sport == 'handball':
                 if len(match_tuple) >= 5:
