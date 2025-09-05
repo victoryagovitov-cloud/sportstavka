@@ -209,18 +209,8 @@ class SofaScoreSimpleQuality:
                     data['score'] = f"{home_score}:{away_score}"
                     break
             
-            # Ищем время матча
-            time_patterns = [
-                r'"minute":\s*(\d+)',
-                r'(\d{1,3})\''
-            ]
-            
-            for pattern in time_patterns:
-                time_match = re.search(pattern, page_text)
-                if time_match:
-                    minute = time_match.group(1)
-                    data['time'] = f"{minute}'"
-                    break
+            # Улучшенное извлечение времени матча
+            data['time'] = self._extract_match_time(page_text)
             
             # Ищем название лиги/турнира
             league_patterns = [
@@ -243,6 +233,80 @@ class SofaScoreSimpleQuality:
             
         except Exception as e:
             return {}
+    
+    def _extract_match_time(self, page_text: str) -> str:
+        """
+        Улучшенное извлечение времени матча
+        """
+        try:
+            # Сначала ищем статус матча и время в JSON
+            status_patterns = [
+                r'"status":\s*{[^}]*"code":\s*(\d+)[^}]*"description":\s*"([^"]+)"',
+                r'"status":\s*{[^}]*"type":\s*"([^"]+)"'
+            ]
+            
+            # Ищем минуту в различных форматах
+            time_patterns = [
+                r'"minute":\s*(\d+)',  # JSON minute
+                r'"time":\s*"(\d{1,3})\'?"',  # JSON time с апострофом
+                r'"currentPeriodStartTimestamp":\s*(\d+)',  # Timestamp начала периода
+                r'(\d{1,3})\'\s*(?:HT|FT|LIVE|$)',  # 45' HT формат
+                r'(\d{1,3})\+(\d+)\'',  # 90+3' формат (добавленное время)
+                r'HT\s*(\d{1,2}):(\d{2})',  # HT 45:00 формат
+                r'FT\s*(\d{1,2}):(\d{2})',  # FT 90:00 формат
+            ]
+            
+            # Проверяем статус матча
+            for pattern in status_patterns:
+                status_match = re.search(pattern, page_text)
+                if status_match:
+                    if len(status_match.groups()) >= 2:
+                        status_code, description = status_match.groups()[:2]
+                        # Если матч завершен
+                        if 'finished' in description.lower() or 'ended' in description.lower():
+                            return "FT"
+                        # Если перерыв
+                        elif 'halftime' in description.lower() or 'break' in description.lower():
+                            return "HT"
+                    elif len(status_match.groups()) == 1:
+                        status_type = status_match.group(1)
+                        if status_type.lower() in ['finished', 'ended']:
+                            return "FT"
+                        elif status_type.lower() in ['halftime', 'break']:
+                            return "HT"
+            
+            # Ищем конкретную минуту
+            for pattern in time_patterns:
+                time_match = re.search(pattern, page_text)
+                if time_match:
+                    if '+' in pattern and len(time_match.groups()) >= 2:
+                        # Добавленное время: 90+3'
+                        main_time, added_time = time_match.groups()[:2]
+                        return f"{main_time}+{added_time}'"
+                    elif ':' in pattern and len(time_match.groups()) >= 2:
+                        # Формат HH:MM
+                        hours, minutes = time_match.groups()[:2]
+                        total_minutes = int(hours) * 60 + int(minutes)
+                        return f"{total_minutes}'"
+                    else:
+                        # Обычная минута
+                        minute = time_match.group(1)
+                        return f"{minute}'"
+            
+            # Если ничего не найдено, ищем ключевые слова статуса
+            if re.search(r'\bLIVE\b', page_text, re.IGNORECASE):
+                # Если матч live, но минута не найдена, возвращаем среднее значение
+                return "45'"
+            elif re.search(r'\bHT\b', page_text):
+                return "HT"
+            elif re.search(r'\bFT\b', page_text):
+                return "FT"
+            
+            # По умолчанию возвращаем начальное время
+            return "1'"
+            
+        except Exception as e:
+            return "1'"
     
     def _extract_basic_statistics(self, page_text: str) -> Dict[str, Any]:
         """

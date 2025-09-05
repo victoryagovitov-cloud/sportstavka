@@ -221,12 +221,32 @@ class FootballScraper(BaseScraper):
         Извлечение минуты из строки времени
         """
         try:
-            # Ищем число перед апострофом (например, "67'")
-            match = re.search(r'(\d+)', time_str)
-            if match:
-                return int(match.group(1))
-        except:
-            pass
+            # Обработка различных форматов времени
+            time_str = time_str.strip()
+            
+            # Если матч завершен (FT) - считаем как 90 минут
+            if time_str.upper() in ['FT', 'FINISHED', 'ENDED']:
+                return 90
+                
+            # Если перерыв (HT) - считаем как 45 минут
+            if time_str.upper() in ['HT', 'HALFTIME', 'BREAK']:
+                return 45
+                
+            # Если добавленное время (например, "90+3'")
+            added_time_match = re.search(r'(\d+)\+(\d+)', time_str)
+            if added_time_match:
+                main_time = int(added_time_match.group(1))
+                added_time = int(added_time_match.group(2))
+                return main_time + added_time
+            
+            # Обычная минута (например, "67'")
+            minute_match = re.search(r'(\d+)', time_str)
+            if minute_match:
+                return int(minute_match.group(1))
+                
+        except Exception as e:
+            self.logger.warning(f"Ошибка извлечения времени из '{time_str}': {e}")
+            
         return 0
     
     def _is_draw_score(self, score: str) -> bool:
