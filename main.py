@@ -4,6 +4,7 @@
 import time
 import schedule
 import threading
+import re
 from typing import List, Dict, Any
 from datetime import datetime
 
@@ -15,6 +16,7 @@ from scrapers.table_tennis_scraper import TableTennisScraper
 from scrapers.handball_scraper import HandballScraper
 from scrapers.sofascore_simple_quality import SofaScoreSimpleQuality
 from scrapers.multi_source_aggregator import MultiSourceAggregator
+from scrapers.manual_live_provider import ManualLiveProvider
 from scrapers.demo_data_provider import demo_provider
 from ai_analyzer.claude_analyzer import ClaudeAnalyzer
 from telegram_bot.reporter import TelegramReporter
@@ -39,6 +41,9 @@ class SportsAnalyzer:
         
         # Инициализируем мульти-источник агрегатор
         self.multi_source_aggregator = MultiSourceAggregator(self.logger)
+        
+        # Инициализируем ручной поставщик актуальных данных
+        self.manual_provider = ManualLiveProvider(self.logger)
         
         self.scrapers = {
             'football': FootballScraper(self.logger),
@@ -78,6 +83,46 @@ class SportsAnalyzer:
                 filtered.append(match)
         
         return filtered
+    
+    def _manual_match_passes_filter(self, match: Dict[str, Any], scraper) -> bool:
+        """
+        Проверка ручного матча через фильтры скрапера
+        """
+        try:
+            # Для ручных данных применяем более мягкие фильтры
+            sport = match.get('sport', 'football')
+            
+            if sport == 'football':
+                # Проверяем что счет не ничейный
+                score = match.get('score', '0:0')
+                if ':' in score:
+                    parts = score.split(':')
+                    if len(parts) == 2 and parts[0].strip() == parts[1].strip():
+                        return False  # Ничья
+                
+                # Проверяем важность матча
+                importance = match.get('importance', 'LOW')
+                if importance in ['HIGH', 'MEDIUM']:
+                    return True  # Важные матчи всегда пропускаем
+                
+                # Для низкоприоритетных проверяем время
+                time_str = match.get('time', 'LIVE')
+                if time_str in ['HT', 'FT']:
+                    return True
+                
+                # Извлекаем минуту
+                minute_match = re.search(r'(\d+)', time_str)
+                if minute_match:
+                    minute = int(minute_match.group(1))
+                    return minute >= 15  # Минимум 15 минут
+                
+                return True  # По умолчанию пропускаем ручные данные
+            
+            return True  # Другие виды спорта пропускаем
+            
+        except Exception as e:
+            self.logger.warning(f"Ошибка проверки ручного матча: {e}")
+            return True  # По умолчанию пропускаем
     
     def start(self):
         """
@@ -222,11 +267,28 @@ class SportsAnalyzer:
                 log_error(self.logger, e, f"Ошибка сбора {sport} матчей")
                 continue
         
-        # Если реальные скраперы не нашли матчи, используем демо-данные для тестирования
+        # Если реальные скраперы не нашли матчи, используем актуальные ручные данные
         if not all_matches:
-            self.logger.info("Реальные матчи не найдены, используем демонстрационные данные")
-            demo_matches = self._get_demo_matches()
-            all_matches.extend(demo_matches)
+            self.logger.info("Реальные скраперы не нашли матчи, используем актуальные ручные данные")
+            manual_matches = self.manual_provider.get_current_live_matches()
+            
+            # Фильтруем ручные данные через основные скраперы
+            for match in manual_matches:
+                sport = match.get('sport', 'football')
+                scraper = self.scrapers.get(sport)
+                
+                if scraper:
+                    # Проверяем матч через фильтры скрапера
+                    if self._manual_match_passes_filter(match, scraper):
+                        all_matches.append(match)
+            
+            self.logger.info(f"Добавлено {len(all_matches)} актуальных ручных матчей")
+            
+            # Если и ручные данные не прошли фильтры, используем демо
+            if not all_matches:
+                self.logger.info("Используем демонстрационные данные")
+                demo_matches = self._get_demo_matches()
+                all_matches.extend(demo_matches)
         
         self.logger.info(f"Всего найдено {len(all_matches)} подходящих матчей")
         return all_matches

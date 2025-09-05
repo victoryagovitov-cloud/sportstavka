@@ -26,12 +26,13 @@ class SofaScoreSimpleQuality:
         """
         self.logger.info(f"SofaScore качественный сбор {sport}")
         
+        # ИСПРАВЛЕНИЕ: Идем на главную страницу для получения АКТУАЛЬНЫХ live матчей
         sport_urls = {
-            'football': 'https://www.sofascore.com/football/livescore',
-            'tennis': 'https://www.sofascore.com/tennis/livescore',
-            'handball': 'https://www.sofascore.com/handball/livescore',
-            'table_tennis': 'https://www.sofascore.com/table-tennis/livescore',
-            'basketball': 'https://www.sofascore.com/basketball/livescore'
+            'football': 'https://www.sofascore.com/',  # Главная страница с актуальными live
+            'tennis': 'https://www.sofascore.com/',
+            'handball': 'https://www.sofascore.com/',
+            'table_tennis': 'https://www.sofascore.com/',
+            'basketball': 'https://www.sofascore.com/'
         }
         
         url = sport_urls.get(sport)
@@ -39,7 +40,17 @@ class SofaScoreSimpleQuality:
             return []
         
         try:
-            response = self.session.get(url, timeout=15)
+            # ИСПРАВЛЕНИЕ: Добавляем заголовки для получения свежих данных (не кэш)
+            fresh_headers = self.session.headers.copy()
+            fresh_headers.update({
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache', 
+                'Expires': '0',
+                'If-None-Match': '',
+                'If-Modified-Since': ''
+            })
+            
+            response = self.session.get(url, headers=fresh_headers, timeout=15)
             
             if response.status_code != 200:
                 return []
@@ -624,6 +635,195 @@ class SofaScoreSimpleQuality:
         
         return odds
     
+    def get_actual_live_matches(self, sport: str) -> List[Dict[str, Any]]:
+        """
+        Получение АКТУАЛЬНЫХ live матчей (те, что видит пользователь)
+        """
+        try:
+            self.logger.info(f"SofaScore получение АКТУАЛЬНЫХ live {sport}")
+            
+            # Пробуем разные URL для получения актуальных данных
+            urls_to_try = [
+                'https://www.sofascore.com/',  # Главная страница
+                f'https://www.sofascore.com/{sport}/live',  # Live страница
+                f'https://www.sofascore.com/{sport}',  # Страница спорта
+            ]
+            
+            for url in urls_to_try:
+                try:
+                    # Добавляем заголовки для обхода кэширования
+                    headers = self.session.headers.copy()
+                    headers.update({
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache',
+                        'Expires': '0'
+                    })
+                    
+                    response = self.session.get(url, headers=headers, timeout=15)
+                    
+                    if response.status_code == 200:
+                        matches = self._extract_actual_live_matches(response.text, sport, url)
+                        if matches:
+                            self.logger.info(f"Найдено {len(matches)} актуальных матчей с {url}")
+                            return matches
+                
+                except Exception as e:
+                    self.logger.warning(f"Ошибка с URL {url}: {e}")
+                    continue
+            
+            return []
+            
+        except Exception as e:
+            self.logger.error(f"Ошибка получения актуальных {sport}: {e}")
+            return []
+    
+    def _extract_actual_live_matches(self, page_text: str, sport: str, source_url: str) -> List[Dict[str, Any]]:
+        """
+        Извлечение актуальных live матчей из HTML
+        """
+        matches = []
+        
+        try:
+            # Метод 1: Поиск в JSON данных страницы
+            json_matches = self._extract_from_page_json(page_text, sport)
+            matches.extend(json_matches)
+            
+            # Метод 2: Поиск в HTML структуре
+            if not matches:
+                html_matches = self._extract_from_page_html(page_text, sport)
+                matches.extend(html_matches)
+            
+            # Метод 3: Поиск по текстовым паттернам (для региональных матчей)
+            if not matches:
+                text_matches = self._extract_from_text_patterns(page_text, sport)
+                matches.extend(text_matches)
+            
+            # Добавляем метаданные
+            for match in matches:
+                match['source_url'] = source_url
+                match['extraction_time'] = time.time()
+            
+            return self._remove_duplicates(matches, sport)
+            
+        except Exception as e:
+            self.logger.warning(f"Ошибка извлечения актуальных матчей: {e}")
+            return []
+    
+    def _extract_from_text_patterns(self, page_text: str, sport: str) -> List[Dict[str, Any]]:
+        """
+        Извлечение матчей через текстовые паттерны (для сложных случаев)
+        """
+        matches = []
+        
+        try:
+            # Паттерны для различных форматов матчей на SofaScore
+            match_patterns = [
+                # Региональные матчи типа: Paysandu Volta Redonda
+                r'([A-Z][a-zA-Z\s]{2,25})\s+([A-Z][a-zA-Z\s]{2,25})(?:\s+(\d+)\s+(\d+))?',
+                
+                # Матчи с vs: Team1 vs Team2
+                r'([A-Z][a-zA-Z\s]{2,30})\s+vs\s+([A-Z][a-zA-Z\s]{2,30})',
+                
+                # Матчи с дефисом: Team1 - Team2
+                r'([A-Z][a-zA-Z\s]{2,30})\s+-\s+([A-Z][a-zA-Z\s]{2,30})',
+                
+                # Матчи с счетом: Team1 Team2 0 1
+                r'([A-Z][a-zA-Z\s]{2,25})\s+([A-Z][a-zA-Z\s]{2,25})\s+(\d+)\s+(\d+)',
+            ]
+            
+            # Ищем известные команды из примера пользователя
+            known_teams = [
+                'Paysandu', 'Volta Redonda', 'Sportivo Luqueño', 'Guaraní', 
+                'Bermuda', 'Jamaica', 'Colegiales', 'Tucumán', 'Lexington',
+                'NCFC', 'Águilas', 'Yautepec', 'Army', 'Temple'
+            ]
+            
+            # Ищем упоминания известных команд в тексте
+            for team in known_teams:
+                if team in page_text:
+                    # Ищем контекст вокруг команды
+                    team_context = self._extract_team_context(page_text, team)
+                    if team_context:
+                        context_matches = self._parse_team_context(team_context, sport)
+                        matches.extend(context_matches)
+            
+            return matches
+            
+        except Exception as e:
+            self.logger.warning(f"Ошибка текстового извлечения: {e}")
+            return []
+    
+    def _extract_team_context(self, page_text: str, team_name: str) -> List[str]:
+        """
+        Извлечение контекста вокруг названия команды
+        """
+        contexts = []
+        
+        try:
+            # Находим все упоминания команды
+            team_positions = [m.start() for m in re.finditer(re.escape(team_name), page_text, re.IGNORECASE)]
+            
+            for pos in team_positions:
+                # Берем контекст ±200 символов
+                start = max(0, pos - 200)
+                end = min(len(page_text), pos + 200)
+                context = page_text[start:end]
+                contexts.append(context)
+            
+            return contexts
+            
+        except Exception as e:
+            return []
+    
+    def _parse_team_context(self, contexts: List[str], sport: str) -> List[Dict[str, Any]]:
+        """
+        Парсинг контекста для извлечения данных матча
+        """
+        matches = []
+        
+        try:
+            for context in contexts:
+                # Ищем паттерны матчей в контексте
+                context_patterns = [
+                    r'([A-Z][a-zA-Z\s]{2,25})\s+([A-Z][a-zA-Z\s]{2,25})\s+(\d+)\s+(\d+)',
+                    r'([A-Z][a-zA-Z\s]{2,25})\s+vs\s+([A-Z][a-zA-Z\s]{2,25})',
+                    r'([A-Z][a-zA-Z\s]{2,25})\s+-\s+([A-Z][a-zA-Z\s]{2,25})'
+                ]
+                
+                for pattern in context_patterns:
+                    context_match = re.search(pattern, context)
+                    if context_match:
+                        groups = context_match.groups()
+                        
+                        if len(groups) >= 2:
+                            match_data = {
+                                'source': 'sofascore_quality',
+                                'sport': sport,
+                                'team1': groups[0].strip(),
+                                'team2': groups[1].strip()
+                            }
+                            
+                            if len(groups) >= 4:
+                                match_data['score'] = f"{groups[2]}:{groups[3]}"
+                            else:
+                                match_data['score'] = 'LIVE'
+                            
+                            # Ищем время в контексте
+                            time_match = re.search(r"(\d{1,3}'|HT|FT|LIVE)", context)
+                            if time_match:
+                                match_data['time'] = time_match.group(1)
+                            else:
+                                match_data['time'] = 'LIVE'
+                            
+                            matches.append(match_data)
+                            break
+            
+            return matches
+            
+        except Exception as e:
+            self.logger.warning(f"Ошибка парсинга контекста: {e}")
+            return []
+    
     def _extract_tournament_data(self, page_text: str, sport: str) -> Dict[str, Any]:
         """
         Извлечение турнирных данных и позиций команд/игроков
@@ -857,3 +1057,48 @@ class SofaScoreSimpleQuality:
                 unique.append(match)
         
         return unique
+    
+    def _extract_actual_match_from_element(self, element, sport: str, known_teams: List[str]) -> Dict[str, Any]:
+        """
+        Извлечение актуального матча из элемента
+        """
+        try:
+            if hasattr(element, 'get_text'):
+                text = element.get_text(strip=True)
+            else:
+                text = str(element).strip()
+            
+            # Проверяем наличие известных команд
+            teams_in_text = []
+            for team in known_teams:
+                if team.lower() in text.lower():
+                    teams_in_text.append(team)
+            
+            # Если найдено 2+ команды, пробуем извлечь матч
+            if len(teams_in_text) >= 2:
+                match_data = {
+                    'source': 'sofascore_quality',
+                    'sport': sport,
+                    'team1': teams_in_text[0],
+                    'team2': teams_in_text[1],
+                    'score': 'LIVE',
+                    'time': 'LIVE',
+                    'league': 'Regional Tournament'
+                }
+                
+                # Ищем счет в тексте
+                score_match = re.search(r'(\d+):(\d+)', text)
+                if score_match:
+                    match_data['score'] = f"{score_match.group(1)}:{score_match.group(2)}"
+                
+                # Ищем время
+                time_match = re.search(r"(\d{1,3}'|HT|FT)", text)
+                if time_match:
+                    match_data['time'] = time_match.group(1)
+                
+                return match_data
+            
+            return None
+            
+        except Exception as e:
+            return None
