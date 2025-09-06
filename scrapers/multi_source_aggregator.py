@@ -15,6 +15,7 @@ from scrapers.livescore_scraper import LiveScoreScraper
 from scrapers.flashscore_scraper import FlashScoreScraper
 from scrapers.whoscored_scraper import WhoScoredScraper
 from scrapers.betboom_scraper import BetBoomScraper
+from scrapers.betcity_scraper import BetCityScraper
 
 class MultiSourceAggregator:
     """
@@ -30,16 +31,17 @@ class MultiSourceAggregator:
             'livescore': LiveScoreScraper(logger),
             'flashscore': FlashScoreScraper(logger),
             'whoscored': WhoScoredScraper(logger),
-            'betboom': BetBoomScraper(logger)
+            'betboom': BetBoomScraper(logger),
+            'betcity': BetCityScraper(logger)
         }
         
         # Приоритеты источников для разных типов данных
         self.source_priorities = {
-            'live_scores': ['livescore', 'sofascore', 'betboom', 'flashscore'],  # Быстрые обновления
+            'live_scores': ['livescore', 'sofascore', 'betcity', 'betboom', 'flashscore'],  # Быстрые обновления
             'detailed_stats': ['sofascore', 'whoscored', 'flashscore'],  # Детальная статистика
             'player_ratings': ['whoscored', 'sofascore'],  # Рейтинги игроков
-            'basic_info': ['sofascore', 'betboom', 'flashscore', 'livescore'],  # Базовая информация
-            'betting_odds': ['betboom', 'whoscored', 'sofascore']  # Коэффициенты
+            'basic_info': ['sofascore', 'betcity', 'betboom', 'flashscore', 'livescore'],  # Базовая информация
+            'betting_odds': ['betcity', 'betboom', 'whoscored', 'sofascore']  # Коэффициенты
         }
         
         # Кэш для избежания дублированных запросов
@@ -393,18 +395,18 @@ class MultiSourceAggregator:
             self.logger.info(f"Получение {sport} с коэффициентами")
             
             # Используем приоритет источников для коэффициентов
-            odds_sources = self.source_priorities.get('betting_odds', ['betboom'])
+            odds_sources = self.source_priorities.get('betting_odds', ['betcity', 'betboom'])
             
             for source_name in odds_sources:
                 if source_name in self.scrapers:
                     try:
                         scraper = self.scrapers[source_name]
                         
-                        if source_name == 'betboom':
+                        if source_name in ['betcity', 'betboom']:
                             if hasattr(scraper, 'get_live_matches_with_odds'):
-                                matches = scraper.get_live_matches_with_odds(sport)
+                                matches = scraper.get_live_matches_with_odds()
                                 if matches:
-                                    self.logger.info(f"BetBoom: получено {len(matches)} матчей с коэффициентами")
+                                    self.logger.info(f"{source_name}: получено {len(matches)} матчей с коэффициентами")
                                     return matches
                         else:
                             # Для других источников используем стандартный метод
