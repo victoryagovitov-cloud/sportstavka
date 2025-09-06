@@ -86,3 +86,20 @@ LOG_LEVEL = 'INFO'
 
 # Максимальное количество рекомендаций в отчете
 MAX_RECOMMENDATIONS = 5
+
+# ПРОДАКШН НАСТРОЙКИ
+PRODUCTION_MODE = True
+MANUAL_FALLBACK_ENABLED = False  # Отключен в продакшене - только автоматические источники
+AUTO_SCRAPING_INTERVAL = 45  # минут
+MAX_RETRY_ATTEMPTS = 3
+TIMEOUT_PER_SOURCE = 30  # секунд
+PARALLEL_SCRAPING = True
+
+# Приоритеты источников для продакшена
+PRODUCTION_SOURCE_PRIORITIES = {
+    'live_scores': ['baltbet', 'betboom', 'sofascore', 'flashscore'],
+    'detailed_stats': ['sofascore', 'whoscored', 'flashscore'],
+    'betting_odds': ['baltbet', 'betboom', 'whoscored'],
+    'player_ratings': ['whoscored', 'sofascore'],
+    'basic_info': ['sofascore', 'baltbet', 'flashscore']
+}
