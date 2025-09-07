@@ -1,6 +1,6 @@
 """
 Агрегатор данных из множественных источников
-Объединяет данные от SofaScore, LiveScore, FlashScore и WhoScored
+Объединяет данные от SofaScore и FlashScore (оптимизированная версия)
 """
 import asyncio
 import time
@@ -11,12 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 
 from scrapers.sofascore_simple_quality import SofaScoreSimpleQuality
-from scrapers.livescore_scraper import LiveScoreScraper
 from scrapers.flashscore_scraper import FlashScoreScraper
-from scrapers.whoscored_scraper import WhoScoredScraper
-from scrapers.betboom_scraper import BetBoomScraper
-from scrapers.betcity_scraper import BetCityScraper
-from scrapers.baltbet_scraper import BaltBetScraper
 
 class MultiSourceAggregator:
     """
@@ -26,24 +21,19 @@ class MultiSourceAggregator:
     def __init__(self, logger):
         self.logger = logger
         
-        # Инициализируем все скраперы
+        # Инициализируем только эффективные скраперы
         self.scrapers = {
             'sofascore': SofaScoreSimpleQuality(logger),
-            'livescore': LiveScoreScraper(logger),
-            'flashscore': FlashScoreScraper(logger),
-            'whoscored': WhoScoredScraper(logger),
-            'betboom': BetBoomScraper(logger),
-            'betcity': BetCityScraper(logger),
-            'baltbet': BaltBetScraper(logger)
+            'flashscore': FlashScoreScraper(logger)
         }
         
-        # Приоритеты источников для разных типов данных
+        # Приоритеты источников для разных типов данных (только эффективные)
         self.source_priorities = {
-            'live_scores': ['livescore', 'sofascore', 'baltbet', 'betcity', 'betboom', 'flashscore'],  # Быстрые обновления
-            'detailed_stats': ['sofascore', 'whoscored', 'flashscore'],  # Детальная статистика
-            'player_ratings': ['whoscored', 'sofascore'],  # Рейтинги игроков
-            'basic_info': ['sofascore', 'baltbet', 'betcity', 'betboom', 'flashscore', 'livescore'],  # Базовая информация
-            'betting_odds': ['baltbet', 'betcity', 'betboom', 'whoscored', 'sofascore']  # Коэффициенты
+            'live_scores': ['sofascore', 'flashscore'],  # Быстрые обновления
+            'detailed_stats': ['sofascore', 'flashscore'],  # Детальная статистика
+            'player_ratings': ['sofascore'],  # Рейтинги игроков
+            'basic_info': ['sofascore', 'flashscore'],  # Базовая информация
+            'betting_odds': ['sofascore']  # Коэффициенты (ограниченно)
         }
         
         # Кэш для избежания дублированных запросов
@@ -391,34 +381,25 @@ class MultiSourceAggregator:
     
     def get_matches_with_odds(self, sport: str) -> List[Dict[str, Any]]:
         """
-        Получение матчей с коэффициентами (приоритет BetBoom)
+        Получение матчей с коэффициентами (ограниченная функциональность)
         """
         try:
-            self.logger.info(f"Получение {sport} с коэффициентами")
+            self.logger.info(f"Получение {sport} с коэффициентами (ограниченно)")
             
-            # Используем приоритет источников для коэффициентов
-            odds_sources = self.source_priorities.get('betting_odds', ['betcity', 'betboom'])
+            # Используем только доступные источники
+            odds_sources = self.source_priorities.get('betting_odds', ['sofascore'])
             
             for source_name in odds_sources:
                 if source_name in self.scrapers:
                     try:
                         scraper = self.scrapers[source_name]
-                        
-                        if source_name in ['betcity', 'betboom']:
-                            if hasattr(scraper, 'get_live_matches_with_odds'):
-                                matches = scraper.get_live_matches_with_odds()
-                                if matches:
-                                    self.logger.info(f"{source_name}: получено {len(matches)} матчей с коэффициентами")
-                                    return matches
-                        else:
-                            # Для других источников используем стандартный метод
-                            matches = scraper.get_live_matches(sport)
-                            if matches:
-                                self.logger.info(f"{source_name}: получено {len(matches)} матчей")
-                                return matches
+                        matches = scraper.get_live_matches(sport)
+                        if matches:
+                            self.logger.info(f"{source_name}: получено {len(matches)} матчей")
+                            return matches
                                 
                     except Exception as e:
-                        self.logger.warning(f"Ошибка получения с коэффициентами от {source_name}: {e}")
+                        self.logger.warning(f"Ошибка получения от {source_name}: {e}")
                         continue
             
             return []
