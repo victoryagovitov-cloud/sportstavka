@@ -16,6 +16,7 @@ from scrapers.flashscore_scraper import FlashScoreScraper
 from scrapers.whoscored_scraper import WhoScoredScraper
 from scrapers.betboom_scraper import BetBoomScraper
 from scrapers.betcity_scraper import BetCityScraper
+from scrapers.baltbet_scraper import BaltBetScraper
 
 class MultiSourceAggregator:
     """
@@ -32,16 +33,17 @@ class MultiSourceAggregator:
             'flashscore': FlashScoreScraper(logger),
             'whoscored': WhoScoredScraper(logger),
             'betboom': BetBoomScraper(logger),
-            'betcity': BetCityScraper(logger)
+            'betcity': BetCityScraper(logger),
+            'baltbet': BaltBetScraper(logger)
         }
         
         # Приоритеты источников для разных типов данных
         self.source_priorities = {
-            'live_scores': ['livescore', 'sofascore', 'betcity', 'betboom', 'flashscore'],  # Быстрые обновления
+            'live_scores': ['livescore', 'sofascore', 'betcity', 'baltbet', 'betboom', 'flashscore'],  # Быстрые обновления
             'detailed_stats': ['sofascore', 'whoscored', 'flashscore'],  # Детальная статистика
             'player_ratings': ['whoscored', 'sofascore'],  # Рейтинги игроков
-            'basic_info': ['sofascore', 'betcity', 'betboom', 'flashscore', 'livescore'],  # Базовая информация
-            'betting_odds': ['betcity', 'betboom', 'whoscored', 'sofascore']  # Коэффициенты
+            'basic_info': ['sofascore', 'betcity', 'baltbet', 'betboom', 'flashscore', 'livescore'],  # Базовая информация
+            'betting_odds': ['betcity', 'baltbet', 'betboom', 'whoscored', 'sofascore']  # Коэффициенты
         }
         
         # Кэш для избежания дублированных запросов
@@ -104,10 +106,10 @@ class MultiSourceAggregator:
                 future_to_source[future] = source_name
             
             # Собираем результаты
-            for future in as_completed(future_to_source, timeout=30):
+            for future in as_completed(future_to_source, timeout=60):
                 source_name = future_to_source[future]
                 try:
-                    matches = future.result(timeout=10)
+                    matches = future.result(timeout=30)
                     all_matches[source_name] = matches
                     self.logger.info(f"Агрегатор: {source_name} вернул {len(matches)} матчей")
                 except Exception as e:
