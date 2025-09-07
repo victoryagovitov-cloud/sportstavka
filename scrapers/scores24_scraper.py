@@ -444,7 +444,7 @@ class Scores24Scraper:
                 r'(\d{1,2}:\d{2})',
                 r'(HT|FT|LIVE)',
                 r'(\d{1,2}\s*мин)',
-                r'(\d{1,2}[''′]\s*\+\s*\d+)'
+                r'(\d{1,2}[\'\'′]\\s*\\+\\s*\d+)'
             ]
             
             for pattern in time_patterns:
