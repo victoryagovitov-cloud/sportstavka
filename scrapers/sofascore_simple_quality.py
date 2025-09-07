@@ -20,6 +20,16 @@ class SofaScoreSimpleQuality:
             'Accept-Language': 'en-US,en;q=0.9'
         })
     
+    def verify_connection(self) -> bool:
+        """
+        Проверка доступности SofaScore
+        """
+        try:
+            response = self.session.get('https://www.sofascore.com/', timeout=10)
+            return response.status_code == 200
+        except Exception:
+            return False
+    
     def get_live_matches(self, sport: str) -> List[Dict[str, Any]]:
         """
         Получение live матчей
