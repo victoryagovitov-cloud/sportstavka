@@ -1,6 +1,6 @@
 """
 Агрегатор данных из множественных источников
-Объединяет данные от SofaScore и FlashScore (оптимизированная версия)
+Объединяет данные от SofaScore, FlashScore, Scores24 и MarathonBet (расширенная версия)
 """
 import asyncio
 import time
@@ -12,6 +12,8 @@ import json
 
 from scrapers.sofascore_simple_quality import SofaScoreSimpleQuality
 from scrapers.flashscore_scraper import FlashScoreScraper
+from scrapers.scores24_scraper import Scores24Scraper
+from scrapers.marathonbet_scraper import MarathonBetScraper
 
 class MultiSourceAggregator:
     """
@@ -21,19 +23,21 @@ class MultiSourceAggregator:
     def __init__(self, logger):
         self.logger = logger
         
-        # Инициализируем только эффективные скраперы
+        # Инициализируем эффективные + новые перспективные скраперы
         self.scrapers = {
             'sofascore': SofaScoreSimpleQuality(logger),
-            'flashscore': FlashScoreScraper(logger)
+            'flashscore': FlashScoreScraper(logger),
+            'scores24': Scores24Scraper(logger),
+            'marathonbet': MarathonBetScraper(logger)
         }
         
-        # Приоритеты источников для разных типов данных (только эффективные)
+        # Приоритеты источников для разных типов данных (расширенные)
         self.source_priorities = {
-            'live_scores': ['sofascore', 'flashscore'],  # Быстрые обновления
+            'live_scores': ['sofascore', 'flashscore', 'scores24', 'marathonbet'],  # Быстрые обновления
             'detailed_stats': ['sofascore', 'flashscore'],  # Детальная статистика
             'player_ratings': ['sofascore'],  # Рейтинги игроков
-            'basic_info': ['sofascore', 'flashscore'],  # Базовая информация
-            'betting_odds': ['sofascore']  # Коэффициенты (ограниченно)
+            'basic_info': ['sofascore', 'flashscore', 'scores24', 'marathonbet'],  # Базовая информация
+            'betting_odds': ['marathonbet', 'sofascore']  # Коэффициенты от MarathonBet
         }
         
         # Кэш для избежания дублированных запросов
@@ -386,16 +390,22 @@ class MultiSourceAggregator:
         try:
             self.logger.info(f"Получение {sport} с коэффициентами (ограниченно)")
             
-            # Используем только доступные источники
-            odds_sources = self.source_priorities.get('betting_odds', ['sofascore'])
+            # Используем источники с коэффициентами
+            odds_sources = self.source_priorities.get('betting_odds', ['marathonbet', 'sofascore'])
             
             for source_name in odds_sources:
                 if source_name in self.scrapers:
                     try:
                         scraper = self.scrapers[source_name]
-                        matches = scraper.get_live_matches(sport)
+                        
+                        # MarathonBet имеет специальный метод для коэффициентов
+                        if source_name == 'marathonbet' and hasattr(scraper, 'get_live_matches_with_odds'):
+                            matches = scraper.get_live_matches_with_odds()
+                        else:
+                            matches = scraper.get_live_matches(sport)
+                        
                         if matches:
-                            self.logger.info(f"{source_name}: получено {len(matches)} матчей")
+                            self.logger.info(f"{source_name}: получено {len(matches)} матчей с коэффициентами")
                             return matches
                                 
                     except Exception as e:
