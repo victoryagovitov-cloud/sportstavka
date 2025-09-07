@@ -355,11 +355,84 @@ class SofaScoreSimpleQuality:
         
         return stats
     
-    def get_detailed_match_data(self, match_url: str, sport: str = 'football') -> Dict[str, Any]:
+    def _find_match_url(self, team1: str, team2: str, sport: str) -> str:
+        """
+        Поиск URL матча по названиям команд
+        """
+        try:
+            # Ищем матч на главной странице SofaScore
+            main_url = "https://www.sofascore.com/"
+            response = self.session.get(main_url, timeout=10)
+            
+            if response.status_code == 200:
+                # Ищем ссылку на матч с нашими командами
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Ищем ссылки на матчи
+                match_links = soup.find_all('a', href=True)
+                
+                for link in match_links:
+                    href = link.get('href')
+                    text = link.get_text(strip=True).lower()
+                    
+                    # Проверяем, содержит ли ссылка наши команды
+                    if (team1.lower() in text and team2.lower() in text and 
+                        '/match/' in href):
+                        return href
+                
+                # Если прямые ссылки не найдены, пробуем поиск
+                return self._search_match_on_sofascore(team1, team2, sport)
+            
+            return ""
+            
+        except Exception as e:
+            self.logger.warning(f"SofaScore поиск матча ошибка: {e}")
+            return ""
+    
+    def _search_match_on_sofascore(self, team1: str, team2: str, sport: str) -> str:
+        """
+        Поиск матча через функцию поиска SofaScore
+        """
+        try:
+            # Поиск по первой команде
+            search_query = team1.replace(' ', '%20')
+            search_url = f"https://www.sofascore.com/search?q={search_query}"
+            
+            response = self.session.get(search_url, timeout=10)
+            
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Ищем ссылки на матчи в результатах поиска
+                links = soup.find_all('a', href=True)
+                
+                for link in links:
+                    href = link.get('href')
+                    text = link.get_text(strip=True).lower()
+                    
+                    if (team2.lower() in text and '/match/' in href):
+                        return href
+            
+            return ""
+            
+        except Exception as e:
+            return ""
+    
+    def get_detailed_match_data(self, team1_or_url: str, team2: str = None, sport: str = 'football') -> Dict[str, Any]:
         """
         Получение детальных данных матча с SofaScore
+        Принимает либо URL матча, либо названия команд
         """
-        full_url = f"https://www.sofascore.com{match_url}"
+        if team2 is None:
+            # Передан URL матча
+            full_url = f"https://www.sofascore.com{team1_or_url}"
+        else:
+            # Переданы названия команд - ищем матч
+            match_url = self._find_match_url(team1_or_url, team2, sport)
+            if not match_url:
+                self.logger.warning(f"SofaScore: матч {team1_or_url} vs {team2} не найден")
+                return {}
+            full_url = f"https://www.sofascore.com{match_url}"
         
         try:
             response = self.session.get(full_url, timeout=15)
