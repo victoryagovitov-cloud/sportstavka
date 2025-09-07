@@ -14,6 +14,9 @@ from scrapers.sofascore_simple_quality import SofaScoreSimpleQuality
 from scrapers.flashscore_scraper import FlashScoreScraper
 from scrapers.scores24_scraper import Scores24Scraper
 from scrapers.marathonbet_scraper import MarathonBetScraper
+from scrapers.team_stats_collector import TeamStatsCollector
+from scrapers.understat_scraper import UnderstatScraper
+from scrapers.fotmob_scraper import FotMobScraper
 
 class MultiSourceAggregator:
     """
@@ -29,6 +32,13 @@ class MultiSourceAggregator:
             'flashscore': FlashScoreScraper(logger),
             'scores24': Scores24Scraper(logger),
             'marathonbet': MarathonBetScraper(logger)
+        }
+        
+        # Специализированные сборщики статистики
+        self.stats_collectors = {
+            'team_stats': TeamStatsCollector(logger),
+            'understat': UnderstatScraper(logger),
+            'fotmob': FotMobScraper(logger)
         }
         
         # Приоритеты источников для разных типов данных (расширенные)
@@ -417,3 +427,128 @@ class MultiSourceAggregator:
         except Exception as e:
             self.logger.error(f"Ошибка получения матчей с коэффициентами: {e}")
             return []
+    
+    def get_comprehensive_team_stats(self, team1: str, team2: str, sport: str = 'football') -> Dict[str, Any]:
+        """
+        Получение комплексной статистики команд из всех источников
+        """
+        try:
+            self.logger.info(f"Сбор комплексной статистики: {team1} vs {team2}")
+            
+            comprehensive_stats = {
+                'match_info': {
+                    'team1': team1,
+                    'team2': team2,
+                    'sport': sport,
+                    'analysis_time': datetime.now().isoformat()
+                },
+                'live_data': {},
+                'betting_data': {},
+                'xg_analytics': {},
+                'team_ratings': {},
+                'player_stats': {}
+            }
+            
+            # 1. Live данные из основных источников
+            live_matches = self.get_aggregated_matches(sport, 'live_scores')
+            target_match = self._find_target_match(live_matches, team1, team2)
+            if target_match:
+                comprehensive_stats['live_data'] = target_match
+            
+            # 2. Букмекерские данные
+            betting_matches = self.get_matches_with_odds(sport)
+            target_betting = self._find_target_match(betting_matches, team1, team2)
+            if target_betting:
+                comprehensive_stats['betting_data'] = target_betting
+            
+            # 3. Статистика команд
+            if 'team_stats' in self.stats_collectors:
+                team_stats = self.stats_collectors['team_stats'].get_team_statistics(team1, team2, sport)
+                comprehensive_stats['team_statistics'] = team_stats
+            
+            # 4. xG аналитика
+            if 'understat' in self.stats_collectors:
+                understat_data = self.stats_collectors['understat'].get_match_xg_data(team1, team2)
+                comprehensive_stats['xg_analytics'] = understat_data
+            
+            # 5. Рейтинги FotMob
+            if 'fotmob' in self.stats_collectors:
+                fotmob_data = self.stats_collectors['fotmob'].get_match_analytics(team1, team2)
+                comprehensive_stats['team_ratings'] = fotmob_data
+            
+            return comprehensive_stats
+            
+        except Exception as e:
+            self.logger.error(f"Ошибка сбора комплексной статистики: {e}")
+            return {}
+    
+    def get_player_comprehensive_stats(self, player_name: str, team: str, sport: str = 'football') -> Dict[str, Any]:
+        """
+        Получение комплексной статистики игрока
+        """
+        try:
+            self.logger.info(f"Сбор статистики игрока: {player_name}")
+            
+            player_stats = {
+                'player_info': {
+                    'name': player_name,
+                    'team': team,
+                    'sport': sport,
+                    'analysis_time': datetime.now().isoformat()
+                },
+                'understat_stats': {},
+                'fotmob_ratings': {},
+                'season_performance': {},
+                'match_history': []
+            }
+            
+            # Статистика с Understat
+            if 'understat' in self.stats_collectors:
+                understat_stats = self.stats_collectors['understat'].get_player_xg_stats(player_name, team)
+                player_stats['understat_stats'] = understat_stats
+            
+            # Рейтинги с FotMob
+            if 'fotmob' in self.stats_collectors:
+                fotmob_stats = self.stats_collectors['fotmob'].get_player_ratings(player_name, team)
+                player_stats['fotmob_ratings'] = fotmob_stats
+            
+            return player_stats
+            
+        except Exception as e:
+            self.logger.error(f"Ошибка сбора статистики игрока: {e}")
+            return {}
+    
+    def _find_target_match(self, matches: List[Dict[str, Any]], team1: str, team2: str) -> Optional[Dict[str, Any]]:
+        """
+        Поиск целевого матча в списке
+        """
+        try:
+            for match in matches:
+                match_team1 = match.get('team1', '').lower()
+                match_team2 = match.get('team2', '').lower()
+                
+                if ((team1.lower() in match_team1 or team1.lower() in match_team2) and
+                    (team2.lower() in match_team1 or team2.lower() in match_team2)):
+                    return match
+            
+            return None
+            
+        except Exception as e:
+            return None
+    
+    def get_stats_sources_health(self) -> Dict[str, bool]:
+        """
+        Проверка здоровья источников статистики
+        """
+        stats_health = {}
+        
+        for source_name, collector in self.stats_collectors.items():
+            try:
+                if hasattr(collector, 'verify_connection'):
+                    stats_health[source_name] = collector.verify_connection()
+                else:
+                    stats_health[source_name] = True
+            except:
+                stats_health[source_name] = False
+        
+        return stats_health
