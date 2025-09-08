@@ -1184,3 +1184,112 @@ class MarathonBetScraper:
             return response.status_code == 200
         except:
             return False
+    
+    def _extract_structural_fast_optimized(self, html_content: str, sport: str) -> List[Dict[str, Any]]:
+        """
+        ОПТИМИЗИРОВАННОЕ быстрое структурное извлечение
+        """
+        matches = []
+        
+        try:
+            # Инициализируем предкомпилированные паттерны
+            if not hasattr(self, '_compiled_patterns'):
+                self._compiled_patterns = {
+                    'teams': re.compile(r'([А-ЯA-Z][а-яa-z\s]{2,30})\s+vs\s+([А-ЯA-Z][а-яa-z\s]{2,30})', re.IGNORECASE),
+                    'odds': re.compile(r'(\d+\.?\d*)', re.IGNORECASE),
+                    'score': re.compile(r'(\d+):(\d+)', re.IGNORECASE),
+                    'time': re.compile(r'(\d+)[\'′]|(\d+:\d+)|LIVE|HT|FT', re.IGNORECASE)
+                }
+            
+            soup = BeautifulSoup(html_content, 'lxml')  # lxml быстрее html.parser
+            
+            # БЫСТРЫЕ СЕЛЕКТОРЫ для контейнеров матчей
+            fast_selectors = [
+                '.match-container',
+                '.event-row', 
+                '[data-match]',
+                '.live-event',
+                '.sport-event'
+            ]
+            
+            match_containers = []
+            for selector in fast_selectors:
+                containers = soup.select(selector)
+                if containers:
+                    match_containers = containers[:50]  # Ограничиваем для скорости
+                    self.logger.debug(f"MarathonBet: быстрый селектор {selector} ({len(containers)} элементов)")
+                    break
+            
+            # Если специальные селекторы не сработали, используем общие
+            if not match_containers:
+                match_containers = soup.find_all(['div', 'tr'])[:50]  # Ограничиваем количество
+            
+            # БЫСТРАЯ ОБРАБОТКА с предкомпилированными паттернами
+            teams_pattern = self._compiled_patterns['teams']
+            
+            for container in match_containers:
+                text = container.get_text(strip=True)
+                
+                # Быстрый поиск команд
+                team_match = teams_pattern.search(text)
+                if team_match:
+                    team1, team2 = team_match.groups()
+                    
+                    # Быстрая валидация
+                    if self._quick_validate_teams_optimized(team1, team2):
+                        match_data = {
+                            'team1': team1.strip(),
+                            'team2': team2.strip(),
+                            'score': self._quick_extract_score_optimized(text),
+                            'time': self._quick_extract_time_optimized(text),
+                            'odds': self._quick_extract_odds_optimized(container),
+                            'raw_text': text,
+                            'source': 'marathonbet_optimized_fast'
+                        }
+                        
+                        matches.append(match_data)
+                        
+                        # Ранний выход для скорости
+                        if len(matches) >= 50:
+                            self.logger.info(f"MarathonBet: ранний выход - найдено {len(matches)} матчей")
+                            break
+            
+            return matches
+            
+        except Exception as e:
+            self.logger.warning(f"MarathonBet быстрое извлечение ошибка: {e}")
+            return []
+    
+    def _quick_validate_teams_optimized(self, team1: str, team2: str) -> bool:
+        """Оптимизированная быстрая валидация команд"""
+        return (team1 and team2 and 
+                len(team1.strip()) >= 3 and len(team2.strip()) >= 3 and
+                team1.lower().strip() != team2.lower().strip() and
+                not team1.strip().isdigit() and not team2.strip().isdigit())
+    
+    def _quick_extract_score_optimized(self, text: str) -> str:
+        """Оптимизированное быстрое извлечение счета"""
+        score_match = self._compiled_patterns['score'].search(text)
+        return f"{score_match.group(1)}:{score_match.group(2)}" if score_match else "LIVE"
+    
+    def _quick_extract_time_optimized(self, text: str) -> str:
+        """Оптимизированное быстрое извлечение времени"""
+        time_match = self._compiled_patterns['time'].search(text)
+        return time_match.group(0) if time_match else "LIVE"
+    
+    def _quick_extract_odds_optimized(self, container) -> Dict[str, str]:
+        """Оптимизированное быстрое извлечение коэффициентов"""
+        try:
+            text = container.get_text()
+            odds_matches = self._compiled_patterns['odds'].findall(text)
+            
+            if len(odds_matches) >= 2:
+                return {
+                    'П1': odds_matches[0],
+                    'П2': odds_matches[1],
+                    'X': odds_matches[2] if len(odds_matches) > 2 else odds_matches[1]
+                }
+        except:
+            pass
+        
+        return {}

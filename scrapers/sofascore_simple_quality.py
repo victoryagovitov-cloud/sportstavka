@@ -357,37 +357,93 @@ class SofaScoreSimpleQuality:
     
     def _find_match_url(self, team1: str, team2: str, sport: str) -> str:
         """
-        Поиск URL матча по названиям команд
+        УЛУЧШЕННЫЙ поиск URL матча по названиям команд
         """
         try:
-            # Ищем матч на главной странице SofaScore
+            # Инициализируем кэш URL (в рамках сессии)
+            if not hasattr(self, '_match_url_cache'):
+                self._match_url_cache = {}
+            
+            # Проверяем кэш
+            cache_key = f"{team1.lower()}:{team2.lower()}:{sport}"
+            if cache_key in self._match_url_cache:
+                self.logger.debug(f"SofaScore: URL из кэша для {team1} vs {team2}")
+                return self._match_url_cache[cache_key]
+            
+            # Генерируем варианты названий команд
+            from utils.team_abbreviations import get_team_variants
+            team1_variants = get_team_variants(team1)
+            team2_variants = get_team_variants(team2)
+            
+            self.logger.debug(f"SofaScore поиск: {team1} ({len(team1_variants)} вариантов) vs {team2} ({len(team2_variants)} вариантов)")
+            
+            # ЦЕЛЕВОЙ ПОИСК - сначала в live разделе
+            live_url = f"https://www.sofascore.com/{sport}/livescore"
+            
+            try:
+                response = self.session.get(live_url, timeout=8)
+                if response.status_code == 200:
+                    match_url = self._smart_search_in_content(response.text, team1_variants, team2_variants)
+                    if match_url:
+                        self._match_url_cache[cache_key] = match_url
+                        return match_url
+            except Exception as e:
+                self.logger.debug(f"Live поиск неудачен: {e}")
+            
+            # FALLBACK - поиск на главной странице
             main_url = "https://www.sofascore.com/"
             response = self.session.get(main_url, timeout=10)
             
             if response.status_code == 200:
-                # Ищем ссылку на матч с нашими командами
-                soup = BeautifulSoup(response.text, 'html.parser')
-                
-                # Ищем ссылки на матчи
-                match_links = soup.find_all('a', href=True)
-                
-                for link in match_links:
-                    href = link.get('href')
-                    text = link.get_text(strip=True).lower()
-                    
-                    # Проверяем, содержит ли ссылка наши команды
-                    if (team1.lower() in text and team2.lower() in text and 
-                        '/match/' in href):
-                        return href
-                
-                # Если прямые ссылки не найдены, пробуем поиск
-                return self._search_match_on_sofascore(team1, team2, sport)
+                match_url = self._smart_search_in_content(response.text, team1_variants, team2_variants)
+                if match_url:
+                    self._match_url_cache[cache_key] = match_url
+                    return match_url
             
-            return ""
+            # ПОСЛЕДНЯЯ ПОПЫТКА - через поисковую функцию
+            search_url = self._search_match_on_sofascore(team1, team2, sport)
+            if search_url:
+                self._match_url_cache[cache_key] = search_url
+            
+            return search_url
             
         except Exception as e:
             self.logger.warning(f"SofaScore поиск матча ошибка: {e}")
             return ""
+    
+    def _smart_search_in_content(self, html_content: str, team1_variants: List[str], 
+                                team2_variants: List[str]) -> str:
+        """
+        Умный поиск матча в HTML контенте
+        """
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # Ищем только ссылки на матчи
+        match_links = soup.find_all('a', href=re.compile(r'/match/'))
+        
+        best_match_url = ""
+        best_confidence = 0.0
+        
+        for link in match_links:
+            href = link.get('href', '')
+            text = link.get_text(strip=True)
+            
+            # Вычисляем уверенность в совпадении
+            from utils.team_abbreviations import calculate_team_match_confidence
+            confidence = calculate_team_match_confidence(text, team1_variants[0], team2_variants[0])
+            
+            if confidence > best_confidence and confidence > 0.7:
+                best_match_url = href
+                best_confidence = confidence
+                
+                # Если очень высокая уверенность - можем остановиться
+                if confidence > 0.95:
+                    break
+        
+        if best_match_url:
+            self.logger.info(f"SofaScore: найден матч с уверенностью {best_confidence:.2f}")
+        
+        return best_match_url
     
     def _search_match_on_sofascore(self, team1: str, team2: str, sport: str) -> str:
         """

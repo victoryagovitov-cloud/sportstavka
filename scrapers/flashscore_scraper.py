@@ -191,35 +191,78 @@ class FlashScoreScraper(BaseScraper):
     
     def _get_matches_via_web(self, sport: str) -> List[Dict[str, Any]]:
         """
-        Получение матчей через веб-скрапинг (резервный метод)
+        УЛУЧШЕННОЕ получение матчей через веб-скрапинг с приоритизированными селекторами
         """
         try:
             self.setup_driver()
             sport_url = self.sport_urls[sport]
             
             self.driver.get(sport_url)
-            time.sleep(3)
+            time.sleep(2)  # Сокращено с 3 до 2 сек
             
             matches = []
             
-            # Селекторы на основе анализа FlashScore
-            match_selectors = [
-                ".event__match",
-                "[class*='event']",
-                ".sportName",
-                "[data-testid*='match']"
+            # УЛУЧШЕННЫЕ ПРИОРИТИЗИРОВАННЫЕ СЕЛЕКТОРЫ (от быстрого к медленному)
+            priority_selectors = [
+                # УРОВЕНЬ 1: Самые быстрые и точные
+                ".event__match--live",                           # Только live матчи
+                ".event__match:not(.event__match--scheduled)",   # Исключаем запланированные
+                "[data-testid='match-row']:not(.finished)",     # Data-атрибуты, не завершенные
+                
+                # УРОВЕНЬ 2: Хорошие селекторы
+                ".event__match",                                 # Стандартный селектор
+                "div[class*='match'][class*='live']",           # Комбинированные классы
+                "[data-match-id]:not([data-status='finished'])", # По атрибутам
+                
+                # УРОВЕНЬ 3: Fallback селекторы
+                "[class*='event']",                             # Общие события
+                ".sportName",                                   # Старый селектор
+                "[data-testid*='match']"                        # Общие тест-атрибуты
             ]
             
-            for selector in match_selectors:
-                match_elements = self.safe_find_elements(By.CSS_SELECTOR, selector)
-                if match_elements:
-                    self.logger.info(f"FlashScore: найдено {len(match_elements)} элементов с селектором {selector}")
-                    break
+            # БЫСТРЫЕ СЕЛЕКТОРЫ ДЛЯ ИЗВЛЕЧЕНИЯ ДАННЫХ
+            data_selectors = {
+                'teams': ['.event__participant', '.participant', '[data-team]', '.team-name'],
+                'score': ['.event__score', '.score', '[data-score]', '.match-score'],
+                'time': ['.event__time', '.time', '[data-time]', '.match-time'],
+                'status': ['.event__stage', '.status', '[data-status]', '.match-status']
+            }
             
-            for element in match_elements[:20]:  # Ограничиваем количество
-                match_data = self._extract_match_from_element(element, sport)
-                if match_data:
-                    matches.append(match_data)
+            # ПРОБУЕМ СЕЛЕКТОРЫ ПО ПРИОРИТЕТУ
+            match_elements = []
+            selected_selector = None
+            
+            for i, selector in enumerate(priority_selectors):
+                start_time = time.time()
+                elements = self.safe_find_elements(By.CSS_SELECTOR, selector)
+                selection_time = time.time() - start_time
+                
+                if elements and selection_time < 0.5:  # Быстрый и результативный селектор
+                    match_elements = elements
+                    selected_selector = selector
+                    self.logger.info(f"FlashScore: используем селектор уровня {i+1}: {selector} "
+                                   f"({len(elements)} элементов за {selection_time:.3f}с)")
+                    break
+                elif elements:
+                    self.logger.debug(f"FlashScore: медленный селектор {selector} ({selection_time:.2f}с)")
+                else:
+                    self.logger.debug(f"FlashScore: пустой селектор {selector}")
+            
+            if not match_elements:
+                self.logger.warning("FlashScore: не найдено элементов ни одним селектором")
+                return []
+            
+            # BATCH ОБРАБОТКА ЭЛЕМЕНТОВ (по 10 за раз)
+            for batch_start in range(0, len(match_elements), 10):
+                batch = match_elements[batch_start:batch_start + 10]
+                
+                batch_matches = self._process_elements_batch_improved(batch, sport, data_selectors)
+                matches.extend(batch_matches)
+                
+                # РАННИЙ ВЫХОД при достижении достаточного количества
+                if len(matches) >= 20:
+                    self.logger.info(f"FlashScore: ранний выход - найдено {len(matches)} матчей")
+                    break
             
             self.logger.info(f"FlashScore веб: извлечено {len(matches)} матчей {sport}")
             return matches
@@ -407,3 +450,150 @@ class FlashScoreScraper(BaseScraper):
             return response.status_code == 200
         except:
             return False
+    
+    def _process_elements_batch_improved(self, elements: List, sport: str, 
+                                        data_selectors: Dict[str, List[str]]) -> List[Dict[str, Any]]:
+        """
+        УЛУЧШЕННАЯ batch обработка элементов с приоритизированными селекторами
+        """
+        batch_matches = []
+        
+        for element in elements:
+            try:
+                # БЫСТРОЕ ИЗВЛЕЧЕНИЕ с приоритизированными селекторами
+                match_data = self._fast_extract_match_data_improved(element, sport, data_selectors)
+                
+                if match_data and self._validate_match_data_improved(match_data):
+                    batch_matches.append(match_data)
+                    
+            except Exception as e:
+                self.logger.debug(f"FlashScore: ошибка обработки элемента: {e}")
+                continue
+        
+        return batch_matches
+    
+    def _fast_extract_match_data_improved(self, element, sport: str, data_selectors: Dict[str, List[str]]) -> Dict[str, Any]:
+        """
+        Быстрое извлечение данных матча с приоритизированными селекторами
+        """
+        match_data = {
+            'source': 'flashscore_improved',
+            'sport': sport,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Используем приоритизированные селекторы для каждого поля
+        for field, selectors in data_selectors.items():
+            for selector in selectors:
+                try:
+                    if field == 'teams':
+                        # Специальная обработка для команд
+                        team_elements = element.find_elements(By.CSS_SELECTOR, selector)
+                        if len(team_elements) >= 2:
+                            match_data['team1'] = self.safe_get_text(team_elements[0])
+                            match_data['team2'] = self.safe_get_text(team_elements[1])
+                            break
+                    else:
+                        # Обычные поля
+                        try:
+                            found_element = element.find_element(By.CSS_SELECTOR, selector)
+                            if found_element:
+                                text = self.safe_get_text(found_element)
+                                if text and text not in ['', '-', 'N/A']:
+                                    match_data[field] = text
+                                    break
+                        except:
+                            continue
+                except:
+                    continue
+        
+        # Fallback для команд если не найдены через селекторы
+        if 'team1' not in match_data or 'team2' not in match_data:
+            full_text = self.safe_get_text(element)
+            teams = self._extract_teams_from_text_improved(full_text)
+            if teams:
+                match_data.update(teams)
+        
+        return match_data if len(match_data) >= 5 else None  # Минимум 5 полей
+    
+    def _extract_teams_from_text_improved(self, text: str) -> Dict[str, str]:
+        """
+        Улучшенное извлечение команд из текста с помощью regex
+        """
+        if not text:
+            return {}
+        
+        # ПРЕДКОМПИЛИРОВАННЫЕ ПАТТЕРНЫ для скорости
+        team_patterns = [
+            re.compile(r'([А-ЯA-Z][а-яa-z\s\.]{2,25})\s+vs?\s+([А-ЯA-Z][а-яa-z\s\.]{2,25})', re.IGNORECASE),
+            re.compile(r'([А-ЯA-Z][а-яa-z\s\.]{2,25})\s+[-–—]\s+([А-ЯA-Z][а-яa-z\s\.]{2,25})', re.IGNORECASE),
+            re.compile(r'([А-ЯA-Z][а-яa-z\s\.]{2,25})\s+(\d+[:-]\d+)\s+([А-ЯA-Z][а-яa-z\s\.]{2,25})', re.IGNORECASE)
+        ]
+        
+        for pattern in team_patterns:
+            match = pattern.search(text)
+            if match:
+                groups = match.groups()
+                if len(groups) >= 2:
+                    team1 = groups[0].strip()
+                    team2 = groups[-1].strip()  # Последняя группа (может быть 2-я или 3-я)
+                    
+                    # Валидация названий команд
+                    if self._validate_team_names_improved(team1, team2):
+                        return {'team1': team1, 'team2': team2}
+        
+        return {}
+    
+    def _validate_team_names_improved(self, team1: str, team2: str) -> bool:
+        """
+        Улучшенная валидация названий команд
+        """
+        if not team1 or not team2:
+            return False
+        
+        # Команды должны быть разными
+        if team1.lower().strip() == team2.lower().strip():
+            return False
+        
+        # Минимальная длина
+        if len(team1.strip()) < 2 or len(team2.strip()) < 2:
+            return False
+        
+        # Не должны быть числами
+        if team1.strip().isdigit() or team2.strip().isdigit():
+            return False
+        
+        # Не должны содержать только специальные символы
+        if re.match(r'^[^\w\s]*$', team1) or re.match(r'^[^\w\s]*$', team2):
+            return False
+        
+        return True
+    
+    def _validate_match_data_improved(self, match_data: Dict[str, Any]) -> bool:
+        """
+        Улучшенная валидация данных матча
+        """
+        # Обязательные поля
+        required_fields = ['team1', 'team2']
+        if not all(field in match_data and match_data[field] for field in required_fields):
+            return False
+        
+        # Валидация команд
+        if not self._validate_team_names_improved(match_data['team1'], match_data['team2']):
+            return False
+        
+        # Валидация счета (если есть)
+        if 'score' in match_data and match_data['score']:
+            score = match_data['score']
+            if score not in ['LIVE', 'HT', 'FT', '-'] and not re.match(r'^\d+[:-]\d+$', score):
+                return False
+        
+        # Валидация времени (если есть)
+        if 'time' in match_data and match_data['time']:
+            time_val = match_data['time']
+            if not (time_val in ['LIVE', 'HT', 'FT', '-'] or 
+                   re.match(r'^\d+[\'′]?$', time_val) or
+                   re.match(r'^\d{2}:\d{2}$', time_val)):
+                return False
+        
+        return True

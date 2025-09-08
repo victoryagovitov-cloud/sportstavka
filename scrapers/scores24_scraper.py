@@ -194,36 +194,157 @@ class Scores24Scraper:
     
     def _extract_by_patterns(self, html_content: str) -> List[Dict[str, Any]]:
         """
-        Извлечение по регулярным выражениям
+        УЛУЧШЕННОЕ извлечение по регулярным выражениям с именованными группами
         """
         matches = []
         
         try:
-            # Паттерны для поиска матчей
-            patterns = [
-                # Команда vs Команда
-                r'([А-ЯA-Z][а-яa-z\s]{2,30})\s+vs\s+([А-ЯA-Z][а-яa-z\s]{2,30})',
-                # Команда - Команда
-                r'([А-ЯA-Z][а-яa-z\s]{2,30})\s+[-–—]\s+([А-ЯA-Z][а-яa-z\s]{2,30})',
-                # Команда Счет Команда
-                r'([А-ЯA-Z][а-яa-z\s]{2,30})\s+(\d+:\d+|\d+-\d+)\s+([А-ЯA-Z][а-яa-z\s]{2,30})',
-                # Более сложные паттерны с временем
-                r'([А-ЯA-Z][а-яa-z\s]{2,30})\s+([А-ЯA-Z][а-яa-z\s]{2,30})\s+(\d+[\'′]|\d+:\d+|LIVE|HT|FT)',
+            # УЛУЧШЕННЫЕ ПАТТЕРНЫ с именованными группами для разных видов спорта
+            improved_patterns = [
+                # ФУТБОЛ: Live матчи с временем
+                re.compile(r'(?P<team1>[А-ЯA-Z][а-яa-z\s]{2,25})\s+(?P<score>\d+:\d+)\s+(?P<team2>[А-ЯA-Z][а-яa-z\s]{2,25})\s+(?P<time>\d+[\'′]|LIVE|HT|FT)', re.MULTILINE),
+                
+                # УНИВЕРСАЛЬНЫЙ: Команда vs Команда
+                re.compile(r'(?P<team1>[А-ЯA-Z][а-яa-z\s\.]{2,25})\s+vs\s+(?P<team2>[А-ЯA-Z][а-яa-z\s\.]{2,25})(?:\s+(?P<score>\d+:\d+))?(?:\s+(?P<time>\d+[\'′]|LIVE|HT|FT))?', re.MULTILINE | re.IGNORECASE),
+                
+                # УНИВЕРСАЛЬНЫЙ: Команда - Команда
+                re.compile(r'(?P<team1>[А-ЯA-Z][а-яa-z\s\.]{2,25})\s+[-–—]\s+(?P<team2>[А-ЯA-Z][а-яa-z\s\.]{2,25})(?:\s+(?P<score>\d+:\d+))?(?:\s+(?P<time>\d+[\'′]|LIVE|HT|FT))?', re.MULTILINE | re.IGNORECASE),
+                
+                # ТЕННИС: Матчи с сетами
+                re.compile(r'(?P<team1>[А-ЯA-Z][а-яa-z\s\.]{2,25})\s+(?P<sets>\d+-\d+)\s+(?P<team2>[А-ЯA-Z][а-яa-z\s\.]{2,25})\s+(?P<time>Set\s+\d+|LIVE)', re.MULTILINE | re.IGNORECASE),
+                
+                # ГАНДБОЛ: Высокие счета
+                re.compile(r'(?P<team1>[А-ЯA-Z][а-яa-z\s]{2,25})\s+(?P<score>\d{2}:\d{2})\s+(?P<team2>[А-ЯA-Z][а-яa-z\s]{2,25})\s+(?P<time>\d+[\'′]|LIVE|HT)', re.MULTILINE),
+                
+                # НАСТОЛЬНЫЙ ТЕННИС: Быстрые матчи
+                re.compile(r'(?P<team1>[А-ЯA-Z][а-яa-z\s\.]{2,25})\s+(?P<games>\d+:\d+)\s+(?P<team2>[А-ЯA-Z][а-яa-z\s\.]{2,25})\s+(?P<time>Game\s+\d+|LIVE)', re.MULTILINE | re.IGNORECASE)
             ]
             
-            for pattern in patterns:
-                pattern_matches = re.findall(pattern, html_content, re.MULTILINE)
-                
-                for match_groups in pattern_matches:
-                    match_data = self._process_pattern_match(match_groups)
-                    if match_data:
-                        matches.append(match_data)
+            # ВАЛИДАТОРЫ ДЛЯ КАЖДОГО ПОЛЯ
+            field_validators = {
+                'team1': lambda x: len(x.strip()) >= 3 and not x.strip().isdigit() and bool(re.match(r'^[А-ЯA-Za-z]', x.strip())),
+                'team2': lambda x: len(x.strip()) >= 3 and not x.strip().isdigit() and bool(re.match(r'^[А-ЯA-Za-z]', x.strip())),
+                'score': lambda x: re.match(r'^\d+[:-]\d+$', x.strip()) if x else True,
+                'time': lambda x: x.strip() in ['LIVE', 'HT', 'FT'] or re.match(r'^\d+[\'′]?$', x.strip()) if x else True,
+                'sets': lambda x: re.match(r'^\d+-\d+$', x.strip()) if x else True,
+                'games': lambda x: re.match(r'^\d+:\d+$', x.strip()) if x else True
+            }
             
-            return matches
+            # ПРОБУЕМ ПАТТЕРНЫ ПО ПРИОРИТЕТУ
+            for i, pattern in enumerate(improved_patterns):
+                pattern_matches = list(pattern.finditer(html_content))
+                
+                self.logger.debug(f"Scores24 паттерн {i+1}: найдено {len(pattern_matches)} совпадений")
+                
+                for match_obj in pattern_matches:
+                    # Извлекаем именованные группы
+                    match_data = match_obj.groupdict()
+                    
+                    # ВАЛИДАЦИЯ КАЖДОГО ПОЛЯ
+                    if self._validate_extracted_match_improved(match_data, field_validators):
+                        # ОБОГАЩЕНИЕ ДАННЫХ
+                        enriched_match = self._enrich_match_data_improved(match_data, i+1)
+                        matches.append(enriched_match)
+                        
+                        # РАННИЙ ВЫХОД при достижении цели
+                        if len(matches) >= 15:
+                            self.logger.info(f"Scores24: ранний выход на паттерне {i+1} - найдено {len(matches)} матчей")
+                            return self._deduplicate_matches_improved(matches)
+            
+            # ДЕДУПЛИКАЦИЯ по командам
+            unique_matches = self._deduplicate_matches_improved(matches)
+            
+            self.logger.info(f"Scores24 паттерны: извлечено {len(unique_matches)} уникальных матчей")
+            return unique_matches
             
         except Exception as e:
             self.logger.warning(f"Scores24 паттерны ошибка: {e}")
             return []
+    
+    def _validate_extracted_match_improved(self, match_data: Dict[str, str], 
+                                          field_validators: Dict[str, callable]) -> bool:
+        """
+        Улучшенная валидация извлеченного матча
+        """
+        # Проверяем обязательные поля
+        if not match_data.get('team1') or not match_data.get('team2'):
+            return False
+        
+        # Команды должны быть разными
+        team1 = match_data['team1'].lower().strip()
+        team2 = match_data['team2'].lower().strip()
+        if team1 == team2:
+            return False
+        
+        # Валидация каждого поля
+        for field, validator in field_validators.items():
+            value = match_data.get(field, '')
+            if value and not validator(value):
+                self.logger.debug(f"Scores24: поле {field} не прошло валидацию: {value}")
+                return False
+        
+        return True
+    
+    def _enrich_match_data_improved(self, match_data: Dict[str, str], pattern_number: int) -> Dict[str, Any]:
+        """
+        Обогащение данных матча дополнительной информацией
+        """
+        enriched = {
+            'source': f'scores24_pattern_{pattern_number}',
+            'sport': 'football',  # По умолчанию, можно улучшить автоопределением
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Копируем основные данные
+        enriched['team1'] = match_data['team1'].strip()
+        enriched['team2'] = match_data['team2'].strip()
+        
+        # Обрабатываем счет
+        if 'score' in match_data and match_data['score']:
+            enriched['score'] = match_data['score'].strip()
+        elif 'sets' in match_data and match_data['sets']:
+            enriched['score'] = match_data['sets'].strip()
+            enriched['sport'] = 'tennis'
+        elif 'games' in match_data and match_data['games']:
+            enriched['score'] = match_data['games'].strip()
+            enriched['sport'] = 'table_tennis'
+        else:
+            enriched['score'] = 'LIVE'
+        
+        # Обрабатываем время
+        if 'time' in match_data and match_data['time']:
+            enriched['time'] = match_data['time'].strip()
+        else:
+            enriched['time'] = 'LIVE'
+        
+        # Определяем лигу (базовое)
+        enriched['league'] = 'Scores24 Live'
+        
+        # Добавляем метаданные
+        enriched['extraction_method'] = f'improved_pattern_{pattern_number}'
+        enriched['validation_passed'] = True
+        
+        return enriched
+    
+    def _deduplicate_matches_improved(self, matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Улучшенная дедупликация матчей по командам
+        """
+        unique_matches = []
+        seen_pairs = set()
+        
+        for match in matches:
+            team1 = match.get('team1', '').lower().strip()
+            team2 = match.get('team2', '').lower().strip()
+            
+            # Создаем уникальную пару команд (в алфавитном порядке)
+            team_pair = tuple(sorted([team1, team2]))
+            
+            if team_pair not in seen_pairs and team1 != team2:
+                seen_pairs.add(team_pair)
+                unique_matches.append(match)
+        
+        return unique_matches
     
     def _extract_by_structure(self, soup: BeautifulSoup) -> List[Dict[str, Any]]:
         """
