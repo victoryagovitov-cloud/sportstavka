@@ -1273,22 +1273,44 @@ class MarathonBetScraper:
                 not team1.strip().isdigit() and not team2.strip().isdigit())
     
     def _quick_extract_score_optimized(self, text: str) -> str:
-        """Оптимизированное быстрое извлечение РЕАЛЬНОГО счета"""
-        # Улучшенные паттерны для извлечения реального счета
+        """Оптимизированное быстрое извлечение РЕАЛЬНОГО счета для всех видов спорта"""
+        # Универсальные паттерны для всех видов спорта
         score_patterns = [
-            r'(\d+)[:-](\d+)',           # 1:0, 2-1
-            r'(\d+)\s*:\s*(\d+)',        # 1 : 0
-            r'(\d+)\s*-\s*(\d+)',        # 1 - 0
-            r'счет\s*(\d+)[:-](\d+)',    # счет 1:0
-            r'result\s*(\d+)[:-](\d+)',  # result 1:0
+            # Простые счета: 1:0, 2-1, 15:12
+            r'(\d+)[:-](\d+)(?!\s*\()',           # 1:0, 2-1 (не захватываем если есть скобки)
+            r'(\d+)\s*:\s*(\d+)(?!\s*\()',        # 1 : 0
+            r'(\d+)\s*-\s*(\d+)(?!\s*\()',        # 1 - 0
+            
+            # Теннисные счета с сетами и геймами: 2:1 (6:4)
+            r'(\d+):(\d+)\s*\((\d+):(\d+)\)',     # 2:1 (6:4) - полный теннисный счет
+            r'(\d+):(\d+)\s*\(\d+:\d+\)',         # 2:1 (любые геймы) - берем только сеты
+            
+            # Настольный теннис: 2:0 (11:8)  
+            r'(\d+):(\d+)\s*\((\d+):(\d+)\)',     # аналогично теннису
+            
+            # Дополнительные паттерны
+            r'score[:\s]*(\d+)[:-](\d+)',         # score: 1:0
+            r'result[:\s]*(\d+)[:-](\d+)',        # result: 1:0
+            r'счет[:\s]*(\d+)[:-](\d+)',          # счет: 1:0
+            r'итог[:\s]*(\d+)[:-](\d+)',          # итог: 1:0
         ]
         
         for pattern in score_patterns:
             score_match = re.search(pattern, text, re.IGNORECASE)
             if score_match:
-                home_score = score_match.group(1)
-                away_score = score_match.group(2)
-                return f"{home_score}:{away_score}"
+                # Для теннисных счетов с полной информацией
+                if len(score_match.groups()) >= 4:
+                    # Теннис: возвращаем сеты (геймы)
+                    sets_home = score_match.group(1)
+                    sets_away = score_match.group(2)
+                    games_home = score_match.group(3)
+                    games_away = score_match.group(4)
+                    return f"{sets_home}:{sets_away} ({games_home}:{games_away})"
+                else:
+                    # Простой счет
+                    home_score = score_match.group(1)
+                    away_score = score_match.group(2)
+                    return f"{home_score}:{away_score}"
         
         return "LIVE"  # Только если реальный счет не найден
     
@@ -1314,10 +1336,10 @@ class MarathonBetScraper:
         
         return {}
     
-    def filter_non_draw_matches(self, matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def filter_non_draw_matches(self, matches: List[Dict[str, Any]], sport: str = 'football') -> List[Dict[str, Any]]:
         """
         КРИТИЧЕСКИ ВАЖНАЯ фильтрация: только матчи с неничейным счетом
-        Соответствует философии системы - анализ ведущих фаворитов
+        Поддерживает все виды спорта: футбол, теннис, настольный теннис, гандбол
         """
         filtered_matches = []
         
@@ -1329,26 +1351,108 @@ class MarathonBetScraper:
                 self.logger.debug(f"Пропускаем матч без счета: {match.get('team1')} vs {match.get('team2')} ({score})")
                 continue
             
-            # Проверяем неничейный счет
-            if ':' in score:
-                try:
-                    home_score, away_score = map(int, score.split(':'))
-                    
-                    # Только неничейные матчи (кто-то ведет)
-                    if home_score != away_score:
-                        match['is_non_draw'] = True
-                        match['leading_team'] = 'home' if home_score > away_score else 'away'
-                        match['goal_difference'] = abs(home_score - away_score)
-                        match['philosophy_compliant'] = True  # Соответствует философии системы
-                        filtered_matches.append(match)
-                        
-                        self.logger.debug(f"✅ Неничейный матч: {match.get('team1')} vs {match.get('team2')} ({score})")
-                    else:
-                        self.logger.debug(f"❌ Ничейный матч исключен: {match.get('team1')} vs {match.get('team2')} ({score})")
-                        
-                except (ValueError, TypeError):
-                    self.logger.debug(f"Ошибка парсинга счета: {score}")
-                    continue
+            # Анализируем счет в зависимости от вида спорта
+            is_non_draw, leader_info = self._analyze_score_by_sport(score, sport)
+            
+            if is_non_draw:
+                match['is_non_draw'] = True
+                match['leading_team'] = leader_info.get('leader', 'unknown')
+                match['score_difference'] = leader_info.get('difference', 0)
+                match['sport_type'] = sport
+                match['philosophy_compliant'] = True
+                filtered_matches.append(match)
+                
+                self.logger.debug(f"✅ Неничейный {sport}: {match.get('team1')} vs {match.get('team2')} ({score})")
+            else:
+                self.logger.debug(f"❌ Ничейный {sport} исключен: {match.get('team1')} vs {match.get('team2')} ({score})")
         
-        self.logger.info(f"MarathonBet фильтрация: {len(filtered_matches)} неничейных из {len(matches)} всего")
+        self.logger.info(f"MarathonBet {sport} фильтрация: {len(filtered_matches)} неничейных из {len(matches)} всего")
         return filtered_matches
+    
+    def _analyze_score_by_sport(self, score: str, sport: str) -> tuple[bool, dict]:
+        """
+        Анализ счета для каждого вида спорта
+        Возвращает (is_non_draw, leader_info)
+        """
+        try:
+            if sport == 'football':
+                # Футбол: простой счет 1:0, 2:1
+                return self._analyze_football_score(score)
+            
+            elif sport == 'tennis':
+                # Теннис: сеты 2:1 (6:4) или просто 1:0
+                return self._analyze_tennis_score(score)
+            
+            elif sport == 'table_tennis':
+                # Настольный теннис: сеты 2:0 (11:8)
+                return self._analyze_table_tennis_score(score)
+            
+            elif sport == 'handball':
+                # Гандбол: простой счет 15:12
+                return self._analyze_handball_score(score)
+            
+            else:
+                # По умолчанию - как футбол
+                return self._analyze_football_score(score)
+                
+        except Exception as e:
+            self.logger.debug(f"Ошибка анализа счета '{score}' для {sport}: {e}")
+            return False, {}
+    
+    def _analyze_football_score(self, score: str) -> tuple[bool, dict]:
+        """Анализ футбольного счета: 1:0, 2:1, etc"""
+        if ':' in score:
+            home, away = map(int, score.split(':'))
+            if home != away:
+                return True, {
+                    'leader': 'home' if home > away else 'away',
+                    'difference': abs(home - away),
+                    'home_score': home,
+                    'away_score': away
+                }
+        return False, {}
+    
+    def _analyze_tennis_score(self, score: str) -> tuple[bool, dict]:
+        """Анализ теннисного счета: 2:1, 1:0 или 2:1 (6:4)"""
+        # Извлекаем счет по сетам (первая часть)
+        sets_score = score.split('(')[0].strip()  # 2:1 из "2:1 (6:4)"
+        
+        if ':' in sets_score:
+            home_sets, away_sets = map(int, sets_score.split(':'))
+            if home_sets != away_sets:
+                return True, {
+                    'leader': 'home' if home_sets > away_sets else 'away',
+                    'difference': abs(home_sets - away_sets),
+                    'home_sets': home_sets,
+                    'away_sets': away_sets
+                }
+        return False, {}
+    
+    def _analyze_table_tennis_score(self, score: str) -> tuple[bool, dict]:
+        """Анализ счета настольного тенниса: 2:0, 1:2 или 2:0 (11:8)"""
+        # Аналогично теннису - анализируем сеты
+        sets_score = score.split('(')[0].strip()
+        
+        if ':' in sets_score:
+            home_sets, away_sets = map(int, sets_score.split(':'))
+            if home_sets != away_sets:
+                return True, {
+                    'leader': 'home' if home_sets > away_sets else 'away',
+                    'difference': abs(home_sets - away_sets),
+                    'home_sets': home_sets,
+                    'away_sets': away_sets
+                }
+        return False, {}
+    
+    def _analyze_handball_score(self, score: str) -> tuple[bool, dict]:
+        """Анализ гандбольного счета: 15:12, 8:10, etc"""
+        if ':' in score:
+            home, away = map(int, score.split(':'))
+            if home != away:
+                return True, {
+                    'leader': 'home' if home > away else 'away',
+                    'difference': abs(home - away),
+                    'home_score': home,
+                    'away_score': away
+                }
+        return False, {}

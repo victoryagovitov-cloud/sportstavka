@@ -829,8 +829,8 @@ class MultiSourceAggregator:
                 try:
                     sport_matches = marathonbet_scraper.get_live_matches_with_odds(sport, use_prioritization=False)
                     
-                    # КРИТИЧЕСКАЯ ФИЛЬТРАЦИЯ: только неничейные матчи
-                    non_draw_matches = marathonbet_scraper.filter_non_draw_matches(sport_matches)
+                    # КРИТИЧЕСКАЯ ФИЛЬТРАЦИЯ: только неничейные матчи для конкретного спорта
+                    non_draw_matches = marathonbet_scraper.filter_non_draw_matches(sport_matches, sport)
                     
                     # Добавляем метку источника
                     for match in non_draw_matches:
