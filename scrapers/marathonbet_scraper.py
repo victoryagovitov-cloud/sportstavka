@@ -58,12 +58,13 @@ class MarathonBetScraper:
             self.logger.error(f"MarathonBet {sport} ошибка: {e}")
             return []
     
-    def get_live_matches_with_odds(self, sport: str = 'football') -> List[Dict[str, Any]]:
+    def get_live_matches_with_odds(self, sport: str = 'football', use_prioritization: bool = True) -> List[Dict[str, Any]]:
         """
         Получение live матчей с коэффициентами для всех видов спорта
+        С ПРИОРИТИЗАЦИЕЙ ЛИГ для российских пользователей
         """
         try:
-            self.logger.info(f"MarathonBet: получение {sport} с коэффициентами")
+            self.logger.info(f"MarathonBet: получение {sport} с коэффициентами (приоритизация: {use_prioritization})")
             
             # ОПТИМИЗИРОВАННЫЕ URL - только лучшие для каждого спорта
             sport_urls = {
@@ -100,17 +101,61 @@ class MarathonBetScraper:
             # Убираем дубли и улучшаем данные
             unique_matches = self._deduplicate_and_enhance_matches(all_matches)
             
-            # ОПТИМИЗАЦИЯ: Ранний выход если достаточно данных
-            if len(unique_matches) >= 50:  # Достаточно для анализа
-                self.logger.info(f"MarathonBet {sport}: достигнуто {len(unique_matches)} матчей - ранний выход")
+            # НОВАЯ ЛОГИКА: Приоритизация вместо простого раннего выхода
+            if use_prioritization:
+                prioritized_matches = self._prioritize_matches_by_leagues(unique_matches, sport)
+                
+                self.logger.info(f"MarathonBet {sport}: приоритизировано {len(prioritized_matches)}/{len(unique_matches)} матчей")
+                return prioritized_matches
+            else:
+                # СТАРАЯ ЛОГИКА: Ранний выход если достаточно данных
+                if len(unique_matches) >= 50:  # Достаточно для анализа
+                    self.logger.info(f"MarathonBet {sport}: достигнуто {len(unique_matches)} матчей - ранний выход")
+                    return unique_matches
+                
+                self.logger.info(f"MarathonBet {sport} всего уникальных: {len(unique_matches)} матчей")
                 return unique_matches
-            
-            self.logger.info(f"MarathonBet {sport} всего уникальных: {len(unique_matches)} матчей")
-            return unique_matches
             
         except Exception as e:
             self.logger.error(f"MarathonBet {sport} общая ошибка: {e}")
             return []
+    
+    def _prioritize_matches_by_leagues(self, matches: List[Dict[str, Any]], sport: str) -> List[Dict[str, Any]]:
+        """
+        Приоритизирует матчи по важности лиг для российских пользователей
+        """
+        try:
+            from .league_prioritizer import LeaguePrioritizer
+            
+            prioritizer = LeaguePrioritizer()
+            
+            # Определяем максимальное количество для каждого вида спорта
+            max_matches_by_sport = {
+                'football': 60,      # Больше для футбола
+                'tennis': 40,        # Средне для тенниса
+                'table_tennis': 30,  # Меньше для настольного тенниса
+                'handball': 25       # Минимально для гандбола
+            }
+            
+            max_matches = max_matches_by_sport.get(sport, 40)
+            
+            # Приоритизируем матчи
+            prioritized = prioritizer.prioritize_matches(matches, max_matches)
+            
+            # Логируем статистику приоритизации
+            stats = prioritizer.get_priority_stats(prioritized)
+            self.logger.info(f"MarathonBet {sport} приоритизация:")
+            for priority, count in stats['by_priority'].items():
+                self.logger.info(f"  {priority}: {count} матчей")
+            
+            return prioritized
+            
+        except ImportError:
+            self.logger.warning("LeaguePrioritizer не найден, используем все матчи")
+            return matches[:50]  # Fallback к старой логике
+        except Exception as e:
+            self.logger.error(f"Ошибка приоритизации: {e}")
+            return matches[:50]  # Fallback к старой логике
     
     def _get_enhanced_matches_from_url(self, url: str, sport: str) -> List[Dict[str, Any]]:
         """
