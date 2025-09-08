@@ -246,10 +246,9 @@ class Scores24Scraper:
                         enriched_match = self._enrich_match_data_improved(match_data, i+1)
                         matches.append(enriched_match)
                         
-                        # РАННИЙ ВЫХОД при достижении цели
-                        if len(matches) >= 15:
-                            self.logger.info(f"Scores24: ранний выход на паттерне {i+1} - найдено {len(matches)} матчей")
-                            return self._deduplicate_matches_improved(matches)
+                        # ПОЛНЫЙ СБОР для максимального покрытия
+                        # Убираем ранний выход - продолжаем сбор всех доступных данных
+                        self.logger.debug(f"Scores24: паттерн {i+1} дал {len(matches)} матчей, продолжаем")
             
             # ДЕДУПЛИКАЦИЯ по командам
             unique_matches = self._deduplicate_matches_improved(matches)

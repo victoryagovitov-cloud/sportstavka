@@ -101,50 +101,55 @@ class MarathonBetScraper:
             # Убираем дубли и улучшаем данные
             unique_matches = self._deduplicate_and_enhance_matches(all_matches)
             
-            # НОВАЯ ЛОГИКА: Приоритизация вместо простого раннего выхода
+            # ОБНОВЛЕННАЯ ЛОГИКА: Убираем ранний выход для максимального покрытия
             if use_prioritization:
-                prioritized_matches = self._prioritize_matches_by_leagues(unique_matches, sport)
+                # Приоритизация БЕЗ жестких лимитов
+                prioritized_matches = self._prioritize_matches_by_leagues_full(unique_matches, sport)
                 
                 self.logger.info(f"MarathonBet {sport}: приоритизировано {len(prioritized_matches)}/{len(unique_matches)} матчей")
                 return prioritized_matches
             else:
-                # СТАРАЯ ЛОГИКА: Ранний выход если достаточно данных
-                if len(unique_matches) >= 50:  # Достаточно для анализа
-                    self.logger.info(f"MarathonBet {sport}: достигнуто {len(unique_matches)} матчей - ранний выход")
-                    return unique_matches
-                
-                self.logger.info(f"MarathonBet {sport} всего уникальных: {len(unique_matches)} матчей")
+                # ПОЛНЫЙ СБОР без раннего выхода - качество данных важнее секунд
+                self.logger.info(f"MarathonBet {sport} полный сбор: {len(unique_matches)} матчей")
                 return unique_matches
             
         except Exception as e:
             self.logger.error(f"MarathonBet {sport} общая ошибка: {e}")
             return []
     
-    def _prioritize_matches_by_leagues(self, matches: List[Dict[str, Any]], sport: str) -> List[Dict[str, Any]]:
+    def _prioritize_matches_by_leagues_full(self, matches: List[Dict[str, Any]], sport: str) -> List[Dict[str, Any]]:
         """
-        Приоритизирует матчи по важности лиг для российских пользователей
+        Приоритизация матчей БЕЗ жестких лимитов - качество данных важнее скорости
         """
         try:
             from .league_prioritizer import LeaguePrioritizer
             
             prioritizer = LeaguePrioritizer()
             
-            # Определяем максимальное количество для каждого вида спорта
+            # УВЕЛИЧЕННЫЕ ЛИМИТЫ для максимального покрытия (45-минутный цикл позволяет)
             max_matches_by_sport = {
-                'football': 60,      # Больше для футбола
-                'tennis': 40,        # Средне для тенниса
-                'table_tennis': 30,  # Меньше для настольного тенниса
-                'handball': 25       # Минимально для гандбола
+                'football': 150,     # Значительно увеличено для футбола
+                'tennis': 100,       # Увеличено для тенниса
+                'table_tennis': 80,  # Увеличено для настольного тенниса
+                'handball': 60       # Увеличено для гандбола
             }
             
-            max_matches = max_matches_by_sport.get(sport, 40)
+            max_matches = max_matches_by_sport.get(sport, 100)
             
-            # Приоритизируем матчи
+            # Приоритизируем с большими лимитами
             prioritized = prioritizer.prioritize_matches(matches, max_matches)
+            
+            # Если приоритизация дала меньше 80% от исходных данных - берем все
+            coverage_percent = (len(prioritized) / len(matches)) * 100 if matches else 0
+            
+            if coverage_percent < 80:
+                self.logger.warning(f"MarathonBet {sport}: приоритизация дала только {coverage_percent:.1f}% покрытия")
+                self.logger.info(f"MarathonBet {sport}: используем ВСЕ {len(matches)} матчей для максимального покрытия")
+                return matches  # Возвращаем все матчи
             
             # Логируем статистику приоритизации
             stats = prioritizer.get_priority_stats(prioritized)
-            self.logger.info(f"MarathonBet {sport} приоритизация:")
+            self.logger.info(f"MarathonBet {sport} приоритизация ({coverage_percent:.1f}% покрытия):")
             for priority, count in stats['by_priority'].items():
                 self.logger.info(f"  {priority}: {count} матчей")
             
@@ -152,10 +157,10 @@ class MarathonBetScraper:
             
         except ImportError:
             self.logger.warning("LeaguePrioritizer не найден, используем все матчи")
-            return matches[:50]  # Fallback к старой логике
+            return matches  # Возвращаем все матчи вместо обрезания
         except Exception as e:
             self.logger.error(f"Ошибка приоритизации: {e}")
-            return matches[:50]  # Fallback к старой логике
+            return matches  # Возвращаем все матчи вместо обрезания
     
     def _get_enhanced_matches_from_url(self, url: str, sport: str) -> List[Dict[str, Any]]:
         """

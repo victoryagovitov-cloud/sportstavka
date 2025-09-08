@@ -259,10 +259,9 @@ class FlashScoreScraper(BaseScraper):
                 batch_matches = self._process_elements_batch_improved(batch, sport, data_selectors)
                 matches.extend(batch_matches)
                 
-                # РАННИЙ ВЫХОД при достижении достаточного количества
-                if len(matches) >= 20:
-                    self.logger.info(f"FlashScore: ранний выход - найдено {len(matches)} матчей")
-                    break
+                # ПОЛНЫЙ СБОР для максимального покрытия (цикл 45 мин позволяет)
+                # Убираем ранний выход - качество данных важнее секунд экономии
+                self.logger.debug(f"FlashScore: обработано {len(matches)} матчей, продолжаем сбор")
             
             self.logger.info(f"FlashScore веб: извлечено {len(matches)} матчей {sport}")
             return matches
