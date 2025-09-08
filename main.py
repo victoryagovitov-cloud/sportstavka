@@ -425,9 +425,18 @@ class SportsAnalyzer:
     
     def _select_best_matches_for_telegram(self, enriched_matches: List[Dict[str, Any]], max_matches: int) -> List[Dict[str, Any]]:
         """
-        Отбор лучших матчей для телеграм канала
+        АДАПТИВНЫЙ отбор матчей для телеграм канала
+        Если матчей мало - берем все, что есть (не высасываем из пальца)
         """
-        if len(enriched_matches) <= max_matches:
+        if not enriched_matches:
+            self.logger.info("📊 Нет доступных матчей для анализа")
+            return []
+        
+        available_count = len(enriched_matches)
+        
+        # АДАПТИВНАЯ ЛОГИКА: берем столько, сколько есть
+        if available_count <= max_matches:
+            self.logger.info(f"📊 Доступно {available_count} матчей (меньше лимита {max_matches}) - берем все")
             return enriched_matches
         
         # Приоритизируем по качеству для телеграм
@@ -478,9 +487,42 @@ class SportsAnalyzer:
             
             return score
         
-        # Сортируем по приоритету
-        sorted_matches = sorted(enriched_matches, key=calculate_telegram_priority, reverse=True)
+        # Сначала фильтруем качественные матчи
+        quality_matches = []
+        for match in enriched_matches:
+            # Фильтруем только матчи с реальными коэффициентами
+            odds = match.get('odds', {})
+            if not odds:
+                continue
+            
+            try:
+                p1 = float(odds.get('П1', 0))
+                p2 = float(odds.get('П2', 0))
+                
+                # Исключаем нереалистичные коэффициенты
+                if p1 <= 0 or p2 <= 0 or p1 > 50 or p2 > 50:
+                    continue
+                
+                # Исключаем слишком очевидные матчи
+                if min(p1, p2) < 1.05:
+                    continue
+                
+                quality_matches.append(match)
+                
+            except (ValueError, TypeError):
+                continue
         
+        self.logger.info(f"📊 Качественных матчей после фильтрации: {len(quality_matches)}")
+        
+        # Если качественных матчей мало - берем все
+        if len(quality_matches) <= max_matches:
+            self.logger.info(f"📊 Качественных матчей {len(quality_matches)} <= {max_matches} - берем все без сортировки")
+            return quality_matches
+        
+        # Если много - сортируем по приоритету и берем лучшие
+        sorted_matches = sorted(quality_matches, key=calculate_telegram_priority, reverse=True)
+        
+        self.logger.info(f"📊 Отобрано {max_matches} лучших из {len(quality_matches)} качественных матчей")
         return sorted_matches[:max_matches]
 
 def main():
