@@ -89,7 +89,7 @@ class DataConflictResolver:
     
     def _resolve_score_conflict(self, matches: List[Dict[str, Any]]) -> str:
         """
-        Разрешение конфликта счетов
+        Разрешение конфликта счетов с учетом правила "счет может только увеличиваться"
         """
         try:
             scores = []
@@ -104,26 +104,122 @@ class DataConflictResolver:
                         'score': score,
                         'source': source,
                         'timestamp': timestamp,
-                        'priority': self.source_priorities.get(source, 0)
+                        'priority': self.source_priorities.get(source, 0),
+                        'total_goals': self._calculate_total_goals(score)
                     })
             
             if not scores:
                 return 'LIVE'
             
-            # Стратегия 1: Самые свежие данные
-            latest_scores = self._get_latest_scores(scores)
-            if len(latest_scores) == 1:
-                self.logger.info(f"Выбран счет по времени: {latest_scores[0]['score']}")
-                return latest_scores[0]['score']
+            # УЛУЧШЕННОЕ ПРАВИЛО: Счет может только увеличиваться + проверка отмены голов
             
-            # Стратегия 2: Приоритет источника
-            prioritized_score = max(latest_scores, key=lambda x: x['priority'])
-            self.logger.info(f"Выбран счет по приоритету источника: {prioritized_score['score']} от {prioritized_score['source']}")
-            return prioritized_score['score']
+            # Сначала проверяем на отмену гола (редкий случай)
+            cancellation = self._detect_goal_cancellation(scores)
+            
+            if cancellation:
+                # Обнаружена потенциальная отмена гола
+                time_diff = cancellation['time_diff']
+                
+                if time_diff < 300:  # Отмена в течение 5 минут - вероятно реальная
+                    self.logger.info(f"ОТМЕНА ГОЛА: {cancellation['previous_score']} → {cancellation['current_score']}")
+                    
+                    # Ищем подтверждение отмены от приоритетного источника
+                    lower_goal_scores = [s for s in scores if s['total_goals'] < max(s['total_goals'] for s in scores)]
+                    
+                    if lower_goal_scores:
+                        # Выбираем самый надежный источник среди тех, кто показывает отмену
+                        most_reliable_cancellation = max(lower_goal_scores, key=lambda x: x['priority'])
+                        
+                        if most_reliable_cancellation['priority'] >= 8:  # Высокий приоритет источника
+                            self.logger.info(f"Подтверждена отмена от надежного источника {most_reliable_cancellation['source']}")
+                            return most_reliable_cancellation['score']
+                
+                self.logger.warning(f"Отмена гола не подтверждена - используем максимальный счет")
+            
+            # ОСНОВНОЕ ПРАВИЛО: Максимальный счет (счет может только увеличиваться)
+            max_goals_score = max(scores, key=lambda x: x['total_goals'])
+            
+            # Если несколько источников с максимальным счетом
+            max_goal_candidates = [s for s in scores if s['total_goals'] == max_goals_score['total_goals']]
+            
+            if len(max_goal_candidates) == 1:
+                self.logger.info(f"Выбран максимальный счет: {max_goals_score['score']} ({max_goals_score['total_goals']} голов)")
+                return max_goals_score['score']
+            
+            # Среди максимальных выбираем самый свежий
+            latest_max = max(max_goal_candidates, 
+                           key=lambda x: (self._parse_timestamp(x['timestamp']), x['priority']))
+            
+            self.logger.info(f"Выбран максимальный счет по времени: {latest_max['score']} от {latest_max['source']}")
+            return latest_max['score']
             
         except Exception as e:
             self.logger.warning(f"Ошибка разрешения конфликта счетов: {e}")
             return matches[0].get('score', 'LIVE')
+    
+    def _detect_goal_cancellation(self, scores: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        НОВЫЙ: Обнаружение отмены гола (редкий случай)
+        """
+        try:
+            if len(scores) < 2:
+                return None
+            
+            # Сортируем по времени
+            sorted_scores = sorted(scores, key=lambda x: self._parse_timestamp(x.get('timestamp', '')))
+            
+            # Ищем случаи уменьшения счета
+            for i in range(1, len(sorted_scores)):
+                prev_goals = sorted_scores[i-1]['total_goals']
+                curr_goals = sorted_scores[i]['total_goals']
+                
+                if curr_goals < prev_goals:
+                    # Возможна отмена гола
+                    goal_diff = prev_goals - curr_goals
+                    
+                    cancellation_info = {
+                        'detected': True,
+                        'previous_score': sorted_scores[i-1]['score'],
+                        'current_score': sorted_scores[i]['score'],
+                        'goals_cancelled': goal_diff,
+                        'time_diff': self._parse_timestamp(sorted_scores[i]['timestamp']) - 
+                                   self._parse_timestamp(sorted_scores[i-1]['timestamp']),
+                        'sources': [sorted_scores[i-1]['source'], sorted_scores[i]['source']]
+                    }
+                    
+                    self.logger.warning(f"ОБНАРУЖЕНА ВОЗМОЖНАЯ ОТМЕНА ГОЛА: {cancellation_info}")
+                    return cancellation_info
+            
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f"Ошибка обнаружения отмены гола: {e}")
+            return None
+    
+    def _calculate_total_goals(self, score: str) -> int:
+        """
+        НОВЫЙ: Подсчет общего количества голов в матче
+        """
+        try:
+            if not score or score == 'LIVE':
+                return 0
+            
+            # Извлекаем числа из счета
+            import re
+            numbers = re.findall(r'\d+', score)
+            
+            if len(numbers) >= 2:
+                goals1, goals2 = int(numbers[0]), int(numbers[1])
+                total = goals1 + goals2
+                
+                self.logger.debug(f"Счет {score} = {total} голов")
+                return total
+            
+            return 0
+            
+        except Exception as e:
+            self.logger.warning(f"Ошибка подсчета голов для счета {score}: {e}")
+            return 0
     
     def _resolve_time_conflict(self, matches: List[Dict[str, Any]]) -> str:
         """
