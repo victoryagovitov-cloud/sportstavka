@@ -7,6 +7,7 @@ import threading
 import re
 from typing import List, Dict, Any
 from datetime import datetime
+import pytz
 
 # Импорты модулей системы
 from utils.logger import setup_logger, log_cycle_start, log_cycle_end, log_error
@@ -18,6 +19,7 @@ from scrapers.sofascore_simple_quality import SofaScoreSimpleQuality
 from scrapers.multi_source_aggregator import MultiSourceAggregator
 from scrapers.manual_live_provider import ManualLiveProvider
 from scrapers.demo_data_provider import demo_provider
+from utils.smart_scheduler import SmartScheduler
 from ai_analyzer.claude_analyzer import ClaudeAnalyzer
 from telegram_bot.reporter import TelegramReporter
 
@@ -36,6 +38,9 @@ class SportsAnalyzer:
         self.running = False
         
         # Инициализация компонентов
+        # Умный планировщик по московскому времени
+        self.smart_scheduler = SmartScheduler(self.logger)
+        
         # Инициализируем SofaScore скрапер для детальной статистики
         self.sofascore_scraper = SofaScoreSimpleQuality(self.logger)
         
@@ -352,6 +357,131 @@ class SportsAnalyzer:
         """
         self.logger.info("Запуск тестового цикла анализа...")
         self.run_analysis_cycle()
+    
+    def run_smart_cycle(self):
+        """
+        Запуск цикла с учетом умного расписания по московскому времени
+        """
+        try:
+            # Проверяем, нужно ли запускать анализ
+            should_run, reason = self.smart_scheduler.should_run_analysis()
+            
+            if not should_run:
+                self.logger.info(f"Анализ пропущен: {reason}")
+                return
+            
+            # Получаем московское время
+            moscow_tz = pytz.timezone('Europe/Moscow')
+            moscow_time = datetime.now(moscow_tz)
+            current_period = self.smart_scheduler.get_current_period(moscow_time)
+            
+            self.logger.info(f"🕐 Запуск анализа в период {current_period.value} (Москва: {moscow_time.strftime('%H:%M')})")
+            
+            # Собираем ВСЕ матчи MarathonBet
+            marathonbet_matches = []
+            for sport in ['football', 'tennis', 'table_tennis', 'handball']:
+                try:
+                    sport_matches = self.multi_source_aggregator.scrapers['marathonbet'].get_live_matches_with_odds(sport, use_prioritization=False)
+                    marathonbet_matches.extend(sport_matches)
+                except Exception as e:
+                    self.logger.warning(f"Ошибка сбора {sport}: {e}")
+            
+            if not marathonbet_matches:
+                self.logger.warning("Не найдено матчей MarathonBet")
+                return
+            
+            self.logger.info(f"📊 Собрано {len(marathonbet_matches)} матчей MarathonBet")
+            
+            # Обогащаем ВСЕ матчи для Claude AI
+            enriched_matches = self.multi_source_aggregator.enrich_marathonbet_matches_for_claude(marathonbet_matches)
+            
+            # Фильтруем и приоритизируем для телеграм канала
+            max_matches_for_telegram = self.smart_scheduler.get_max_matches_for_period(moscow_time)
+            telegram_matches = self._select_best_matches_for_telegram(enriched_matches, max_matches_for_telegram)
+            
+            self.logger.info(f"📨 Отобрано {len(telegram_matches)} матчей для телеграм (период: {current_period.value})")
+            
+            # Анализируем отобранные матчи через Claude AI (Вариант 2)
+            if telegram_matches:
+                self.logger.info(f"🧠 Запуск анализа Claude AI для {len(telegram_matches)} матчей")
+                # TODO: Интеграция с Claude AI (Вариант 2)
+                # analysis_results = self.claude_analyzer.analyze_matches_independently(telegram_matches)
+                
+                # Пока логируем что будет отправлено
+                for i, match in enumerate(telegram_matches, 1):
+                    team1 = match.get('team1', 'N/A')[:15]
+                    team2 = match.get('team2', 'N/A')[:15]
+                    odds = match.get('odds', {})
+                    p1 = odds.get('П1', 'N/A')
+                    p2 = odds.get('П2', 'N/A')
+                    
+                    self.logger.info(f"   {i}. {team1} vs {team2} (П1:{p1}, П2:{p2})")
+                
+                self.logger.info(f"✅ Готово к отправке в телеграм канал")
+            
+        except Exception as e:
+            self.logger.error(f"Ошибка умного цикла: {e}")
+            raise
+    
+    def _select_best_matches_for_telegram(self, enriched_matches: List[Dict[str, Any]], max_matches: int) -> List[Dict[str, Any]]:
+        """
+        Отбор лучших матчей для телеграм канала
+        """
+        if len(enriched_matches) <= max_matches:
+            return enriched_matches
+        
+        # Приоритизируем по качеству для телеграм
+        def calculate_telegram_priority(match):
+            score = 0
+            
+            # Анализ коэффициентов
+            claude_analysis = match.get('claude_odds_analysis', {})
+            betting_rec = claude_analysis.get('betting_recommendation', '')
+            risk_level = claude_analysis.get('risk_level', '')
+            
+            # Приоритеты рекомендаций
+            if 'good_conservative_value' in betting_rec:
+                score += 10  # Лучшие консервативные возможности
+            elif 'analyze_for_value_opportunities' in betting_rec:
+                score += 8   # Хорошие возможности для анализа
+            elif 'consider_if_very_confident' in betting_rec:
+                score += 6   # Требуют уверенности
+            elif 'avoid_too_low_odds' in betting_rec:
+                score += 2   # Низкий приоритет
+            
+            # Приоритеты рисков
+            if risk_level == 'low_risk':
+                score += 5
+            elif risk_level == 'medium_risk':
+                score += 3
+            elif risk_level == 'very_low_risk':
+                score += 1  # Слишком очевидные
+            
+            # Бонус за сбалансированные матчи
+            odds = match.get('odds', {})
+            if odds:
+                try:
+                    p1 = float(odds.get('П1', 0))
+                    p2 = float(odds.get('П2', 0))
+                    
+                    # Предпочитаем матчи с коэффициентами 1.5-3.0
+                    avg_odds = (p1 + p2) / 2
+                    if 1.5 <= avg_odds <= 3.0:
+                        score += 3
+                    
+                    # Бонус за близкие коэффициенты (интересные матчи)
+                    if abs(p1 - p2) < 0.5:
+                        score += 2
+                        
+                except (ValueError, TypeError):
+                    pass
+            
+            return score
+        
+        # Сортируем по приоритету
+        sorted_matches = sorted(enriched_matches, key=calculate_telegram_priority, reverse=True)
+        
+        return sorted_matches[:max_matches]
 
 def main():
     """
