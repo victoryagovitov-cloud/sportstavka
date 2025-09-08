@@ -1273,9 +1273,24 @@ class MarathonBetScraper:
                 not team1.strip().isdigit() and not team2.strip().isdigit())
     
     def _quick_extract_score_optimized(self, text: str) -> str:
-        """Оптимизированное быстрое извлечение счета"""
-        score_match = self._compiled_patterns['score'].search(text)
-        return f"{score_match.group(1)}:{score_match.group(2)}" if score_match else "LIVE"
+        """Оптимизированное быстрое извлечение РЕАЛЬНОГО счета"""
+        # Улучшенные паттерны для извлечения реального счета
+        score_patterns = [
+            r'(\d+)[:-](\d+)',           # 1:0, 2-1
+            r'(\d+)\s*:\s*(\d+)',        # 1 : 0
+            r'(\d+)\s*-\s*(\d+)',        # 1 - 0
+            r'счет\s*(\d+)[:-](\d+)',    # счет 1:0
+            r'result\s*(\d+)[:-](\d+)',  # result 1:0
+        ]
+        
+        for pattern in score_patterns:
+            score_match = re.search(pattern, text, re.IGNORECASE)
+            if score_match:
+                home_score = score_match.group(1)
+                away_score = score_match.group(2)
+                return f"{home_score}:{away_score}"
+        
+        return "LIVE"  # Только если реальный счет не найден
     
     def _quick_extract_time_optimized(self, text: str) -> str:
         """Оптимизированное быстрое извлечение времени"""
@@ -1298,3 +1313,42 @@ class MarathonBetScraper:
             pass
         
         return {}
+    
+    def filter_non_draw_matches(self, matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        КРИТИЧЕСКИ ВАЖНАЯ фильтрация: только матчи с неничейным счетом
+        Соответствует философии системы - анализ ведущих фаворитов
+        """
+        filtered_matches = []
+        
+        for match in matches:
+            score = match.get('score', 'LIVE')
+            
+            # Пропускаем матчи без реального счета
+            if score in ['LIVE', '', 'FT', 'HT']:
+                self.logger.debug(f"Пропускаем матч без счета: {match.get('team1')} vs {match.get('team2')} ({score})")
+                continue
+            
+            # Проверяем неничейный счет
+            if ':' in score:
+                try:
+                    home_score, away_score = map(int, score.split(':'))
+                    
+                    # Только неничейные матчи (кто-то ведет)
+                    if home_score != away_score:
+                        match['is_non_draw'] = True
+                        match['leading_team'] = 'home' if home_score > away_score else 'away'
+                        match['goal_difference'] = abs(home_score - away_score)
+                        match['philosophy_compliant'] = True  # Соответствует философии системы
+                        filtered_matches.append(match)
+                        
+                        self.logger.debug(f"✅ Неничейный матч: {match.get('team1')} vs {match.get('team2')} ({score})")
+                    else:
+                        self.logger.debug(f"❌ Ничейный матч исключен: {match.get('team1')} vs {match.get('team2')} ({score})")
+                        
+                except (ValueError, TypeError):
+                    self.logger.debug(f"Ошибка парсинга счета: {score}")
+                    continue
+        
+        self.logger.info(f"MarathonBet фильтрация: {len(filtered_matches)} неничейных из {len(matches)} всего")
+        return filtered_matches

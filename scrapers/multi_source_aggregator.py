@@ -829,12 +829,16 @@ class MultiSourceAggregator:
                 try:
                     sport_matches = marathonbet_scraper.get_live_matches_with_odds(sport, use_prioritization=False)
                     
+                    # КРИТИЧЕСКАЯ ФИЛЬТРАЦИЯ: только неничейные матчи
+                    non_draw_matches = marathonbet_scraper.filter_non_draw_matches(sport_matches)
+                    
                     # Добавляем метку источника
-                    for match in sport_matches:
+                    for match in non_draw_matches:
                         match['variant_2_source'] = 'marathonbet_only'
                         match['claude_analysis_ready'] = True
+                        match['non_draw_filtered'] = True  # Прошел фильтрацию
                     
-                    all_matches.extend(sport_matches)
+                    all_matches.extend(non_draw_matches)
                     self.logger.info(f"MarathonBet {sport}: {len(sport_matches)} матчей")
                     
                 except Exception as e:
