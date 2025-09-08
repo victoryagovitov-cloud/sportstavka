@@ -50,38 +50,38 @@ class SmartScheduler:
             
             ActivityPeriod.MORNING_LOW: ScheduleConfig(
                 period=ActivityPeriod.MORNING_LOW,
-                interval_minutes=120,  # Каждые 2 часа
+                interval_minutes=60,  # АКТИВНЫЙ РЕЖИМ: Каждый час
                 enabled=True,
-                description="Утро - редкие обновления, мало матчей",
-                target_audience="Ранние пташки, планирующие день",
-                max_matches_per_message=5
+                description="Утро - активное тестирование, максимальное покрытие",
+                target_audience="Тестировщик системы",
+                max_matches_per_message=10  # Максимум для тестирования
             ),
             
             ActivityPeriod.AFTERNOON_HIGH: ScheduleConfig(
                 period=ActivityPeriod.AFTERNOON_HIGH,
-                interval_minutes=60,  # Каждый час
+                interval_minutes=30,  # АКТИВНЫЙ РЕЖИМ: Каждые 30 минут
                 enabled=True,
-                description="День - активный период, много матчей",
-                target_audience="Офисные работники, активные беттеры",
-                max_matches_per_message=8
+                description="День - интенсивное тестирование, много матчей",
+                target_audience="Активное тестирование системы",
+                max_matches_per_message=10  # Максимум для тестирования
             ),
             
             ActivityPeriod.EVENING_PEAK: ScheduleConfig(
                 period=ActivityPeriod.EVENING_PEAK,
-                interval_minutes=30,  # Каждые 30 минут
+                interval_minutes=20,  # АКТИВНЫЙ РЕЖИМ: Каждые 20 минут
                 enabled=True,
-                description="Вечер - пик активности, максимум матчей",
-                target_audience="Основная аудитория после работы",
-                max_matches_per_message=10
+                description="Вечер - максимальная интенсивность тестирования",
+                target_audience="Пиковое тестирование системы",
+                max_matches_per_message=10  # Максимум для тестирования
             ),
             
             ActivityPeriod.LATE_EVENING: ScheduleConfig(
                 period=ActivityPeriod.LATE_EVENING,
-                interval_minutes=90,  # Каждые 1.5 часа
+                interval_minutes=60,  # АКТИВНЫЙ РЕЖИМ: Каждый час
                 enabled=True,
-                description="Поздний вечер - снижение активности",
-                target_audience="Поздние пользователи, завершение дня",
-                max_matches_per_message=6
+                description="Поздний вечер - продолжение интенсивного тестирования",
+                target_audience="Поздние тесты системы",
+                max_matches_per_message=10  # Максимум для тестирования
             )
         }
         
