@@ -8,6 +8,7 @@ import re
 import logging
 from typing import List, Dict, Any, Optional
 from bs4 import BeautifulSoup
+from scrapers.smart_team_matcher import SmartTeamMatcher
 
 
 class HybridScoreProvider:
@@ -50,6 +51,9 @@ class HybridScoreProvider:
         
         # Кэш счетов для избежания повторных запросов
         self._scores_cache = {}
+        
+        # Умное сопоставление команд
+        self.smart_matcher = SmartTeamMatcher(logger)
         
     def get_live_scores_from_best_source(self) -> Dict[str, str]:
         """
@@ -121,58 +125,75 @@ class HybridScoreProvider:
     
     def enrich_marathonbet_matches_with_real_scores(self, marathonbet_matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        КЛЮЧЕВОЙ МЕТОД: Обогащает матчи MarathonBet реальными счетами
+        БЕЗОПАСНЫЙ МЕТОД: Консервативный подход к обогащению матчей
+        
+        ФИЛОСОФИЯ: Лучше меньше матчей, но точных!
         
         Args:
             marathonbet_matches: Матчи от MarathonBet с коэффициентами но LIVE счетами
             
         Returns:
-            List[Dict[str, Any]]: Матчи с реальными счетами
+            List[Dict[str, Any]]: Только матчи с проверенными реальными счетами
         """
         
-        # Получаем реальные счета из лучшего источника
-        live_scores = self.get_live_scores_from_best_source()
+        self.logger.info("🛡️ КОНСЕРВАТИВНЫЙ ПОДХОД: Только проверенные данные")
         
-        if not live_scores:
-            self.logger.warning("❌ Не удалось получить реальные счета")
-            return marathonbet_matches
-        
-        self.logger.info(f"✅ Получено {len(live_scores)} реальных счетов")
-        
-        # Обогащаем матчи MarathonBet
-        enriched_matches = []
-        scores_used = 0
-        
-        for match in marathonbet_matches:
-            original_score = match.get('score', 'LIVE')
+        # Сначала пытаемся умное сопоставление
+        try:
+            sofascore_matches = self.smart_matcher.get_sofascore_matches_with_teams()
             
-            # Если у матча уже есть реальный счет - оставляем его
-            if original_score != 'LIVE' and ':' in original_score:
-                enriched_matches.append(match)
-                continue
-            
-            # Пытаемся найти подходящий реальный счет
-            if scores_used < len(live_scores):
-                # Берем счет по порядку (в реальной системе здесь была бы логика сопоставления команд)
-                score_key = list(live_scores.keys())[scores_used]
-                real_score = live_scores[score_key]
+            if sofascore_matches:
+                self.logger.info(f"✅ SofaScore: получено {len(sofascore_matches)} матчей")
                 
-                # Создаем обогащенный матч
-                enriched_match = match.copy()
-                enriched_match['score'] = real_score
-                enriched_match['score_source'] = 'hybrid_provider'
-                enriched_match['original_score'] = original_score
+                matched_matches = self.smart_matcher.match_marathonbet_with_sofascore(
+                    marathonbet_matches, sofascore_matches
+                )
                 
-                enriched_matches.append(enriched_match)
-                scores_used += 1
+                # Фильтруем только высокоуверенные сопоставления
+                high_confidence_matches = []
+                for match in matched_matches:
+                    confidence = match.get('match_confidence', 0)
+                    if confidence >= 0.7:  # Высокий порог безопасности
+                        high_confidence_matches.append(match)
                 
-                self.logger.debug(f"Обогащен матч: {match.get('team1')} vs {match.get('team2')} -> {real_score}")
+                if high_confidence_matches:
+                    self.logger.info(f"✅ Принято {len(high_confidence_matches)} матчей с высокой уверенностью")
+                    return high_confidence_matches
+                else:
+                    self.logger.warning("⚠️ Нет высокоуверенных сопоставлений")
             else:
-                # Если счета закончились, оставляем оригинальный LIVE
-                enriched_matches.append(match)
+                self.logger.warning("❌ SofaScore недоступен для сопоставления")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Ошибка умного сопоставления: {e}")
         
-        self.logger.info(f"✅ Обогащено {scores_used} матчей реальными счетами")
-        return enriched_matches
+        # КОНСЕРВАТИВНЫЙ FALLBACK: только матчи с реальными счетами от MarathonBet
+        self.logger.info("🛡️ Переключаемся на консервативный режим")
+        
+        real_score_matches = []
+        for match in marathonbet_matches:
+            score = match.get('score', 'LIVE')
+            
+            # Принимаем только матчи с реальными (не LIVE) счетами
+            if score != 'LIVE' and ':' in score and score != '0:0':
+                try:
+                    home, away = map(int, score.split(':'))
+                    if 0 <= home <= 10 and 0 <= away <= 10:  # Разумные счета
+                        match['score_source'] = 'marathonbet_verified'
+                        match['quality_level'] = 'high'
+                        real_score_matches.append(match)
+                except ValueError:
+                    continue
+        
+        self.logger.info(f"✅ Консервативный режим: {len(real_score_matches)} проверенных матчей")
+        
+        if real_score_matches:
+            self.logger.info("🎯 Используем только проверенные счета от MarathonBet")
+        else:
+            self.logger.warning("⚠️ Нет матчей с проверенными счетами")
+            self.logger.info("💡 Рекомендация: дождаться матчей с реальными счетами")
+        
+        return real_score_matches
     
     def get_statistics(self) -> Dict[str, Any]:
         """
