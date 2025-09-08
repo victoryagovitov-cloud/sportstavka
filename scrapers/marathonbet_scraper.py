@@ -1273,44 +1273,53 @@ class MarathonBetScraper:
                 not team1.strip().isdigit() and not team2.strip().isdigit())
     
     def _quick_extract_score_optimized(self, text: str) -> str:
-        """Оптимизированное быстрое извлечение РЕАЛЬНОГО счета для всех видов спорта"""
-        # Универсальные паттерны для всех видов спорта
+        """ИСПРАВЛЕНО: Извлечение РЕАЛЬНЫХ счетов из MarathonBet HTML"""
+        
+        # ПРОВЕРЕННЫЕ паттерны на основе анализа реального HTML MarathonBet
         score_patterns = [
-            # Простые счета: 1:0, 2-1, 15:12
-            r'(\d+)[:-](\d+)(?!\s*\()',           # 1:0, 2-1 (не захватываем если есть скобки)
-            r'(\d+)\s*:\s*(\d+)(?!\s*\()',        # 1 : 0
-            r'(\d+)\s*-\s*(\d+)(?!\s*\()',        # 1 - 0
+            # ГЛАВНЫЙ паттерн - находит реальные счета в HTML
+            r'\b(\d+):(\d+)\b',                   # 1:0, 0:2, 0:3 - РАБОТАЕТ!
             
-            # Теннисные счета с сетами и геймами: 2:1 (6:4)
-            r'(\d+):(\d+)\s*\((\d+):(\d+)\)',     # 2:1 (6:4) - полный теннисный счет
-            r'(\d+):(\d+)\s*\(\d+:\d+\)',         # 2:1 (любые геймы) - берем только сеты
+            # Дополнительные паттерны для разных форматов
+            r'(\d+)\s*:\s*(\d+)(?!\s*\()',        # 1 : 0 (не теннисные)
+            r'(\d+)\s*-\s*(\d+)',                 # 1-0, 2-1
             
-            # Настольный теннис: 2:0 (11:8)  
-            r'(\d+):(\d+)\s*\((\d+):(\d+)\)',     # аналогично теннису
+            # Теннисные счета: 2:1 (6:4)
+            r'(\d+):(\d+)\s*\((\d+):(\d+)\)',     # полный теннисный счет
+            r'(\d+):(\d+)\s*\(\d+:\d+\)',         # сеты (любые геймы)
             
-            # Дополнительные паттерны
-            r'score[:\s]*(\d+)[:-](\d+)',         # score: 1:0
-            r'result[:\s]*(\d+)[:-](\d+)',        # result: 1:0
-            r'счет[:\s]*(\d+)[:-](\d+)',          # счет: 1:0
-            r'итог[:\s]*(\d+)[:-](\d+)',          # итог: 1:0
+            # HTML атрибуты и JSON
+            r'score[\s"\'=]+(\d+)[:-](\d+)',      # score="1:0"
+            r'result[\s"\'=]+(\d+)[:-](\d+)',     # result="0:1"
+            r'"score"[\s]*:[\s]*"(\d+)[:-](\d+)"', # JSON "score":"1:0"
         ]
         
         for pattern in score_patterns:
             score_match = re.search(pattern, text, re.IGNORECASE)
             if score_match:
+                groups = score_match.groups()
+                
                 # Для теннисных счетов с полной информацией
-                if len(score_match.groups()) >= 4:
-                    # Теннис: возвращаем сеты (геймы)
-                    sets_home = score_match.group(1)
-                    sets_away = score_match.group(2)
-                    games_home = score_match.group(3)
-                    games_away = score_match.group(4)
+                if len(groups) >= 4:
+                    sets_home = groups[0]
+                    sets_away = groups[1]
+                    games_home = groups[2]
+                    games_away = groups[3]
                     return f"{sets_home}:{sets_away} ({games_home}:{games_away})"
-                else:
-                    # Простой счет
-                    home_score = score_match.group(1)
-                    away_score = score_match.group(2)
-                    return f"{home_score}:{away_score}"
+                
+                # Простой счет
+                elif len(groups) >= 2:
+                    home_score = groups[0]
+                    away_score = groups[1]
+                    
+                    # Фильтруем разумные счета
+                    try:
+                        home, away = int(home_score), int(away_score)
+                        # Для футбола/гандбола: 0-15, для тенниса: 0-7 сетов
+                        if 0 <= home <= 15 and 0 <= away <= 15:
+                            return f"{home}:{away}"
+                    except ValueError:
+                        continue
         
         return "LIVE"  # Только если реальный счет не найден
     

@@ -18,6 +18,7 @@ from scrapers.team_stats_collector import TeamStatsCollector
 from scrapers.understat_scraper import UnderstatScraper
 from scrapers.fotmob_scraper import FotMobScraper
 from scrapers.parallel_aggregator import SafeParallelAggregator
+from scrapers.hybrid_score_provider import HybridScoreProvider
 
 class MultiSourceAggregator:
     """
@@ -44,6 +45,9 @@ class MultiSourceAggregator:
         
         # Безопасный параллельный агрегатор
         self.parallel_aggregator = SafeParallelAggregator(self.scrapers, logger)
+        
+        # Гибридный провайдер счетов для получения реальных live счетов
+        self.hybrid_score_provider = HybridScoreProvider(logger)
         
         # Комплексный пайплайн статистики для MarathonBet
         from utils.comprehensive_stats_pipeline import create_comprehensive_stats_pipeline
@@ -829,8 +833,11 @@ class MultiSourceAggregator:
                 try:
                     sport_matches = marathonbet_scraper.get_live_matches_with_odds(sport, use_prioritization=False)
                     
+                    # ГИБРИДНОЕ ОБОГАЩЕНИЕ: MarathonBet + реальные счета из SofaScore
+                    enriched_matches = self.hybrid_score_provider.enrich_marathonbet_matches_with_real_scores(sport_matches)
+                    
                     # КРИТИЧЕСКАЯ ФИЛЬТРАЦИЯ: только неничейные матчи для конкретного спорта
-                    non_draw_matches = marathonbet_scraper.filter_non_draw_matches(sport_matches, sport)
+                    non_draw_matches = marathonbet_scraper.filter_non_draw_matches(enriched_matches, sport)
                     
                     # Добавляем метку источника
                     for match in non_draw_matches:
