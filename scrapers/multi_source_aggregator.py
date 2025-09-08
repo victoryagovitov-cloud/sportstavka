@@ -17,6 +17,7 @@ from scrapers.marathonbet_scraper import MarathonBetScraper
 from scrapers.team_stats_collector import TeamStatsCollector
 from scrapers.understat_scraper import UnderstatScraper
 from scrapers.fotmob_scraper import FotMobScraper
+from scrapers.parallel_aggregator import SafeParallelAggregator
 
 class MultiSourceAggregator:
     """
@@ -40,6 +41,12 @@ class MultiSourceAggregator:
             'understat': UnderstatScraper(logger),
             'fotmob': FotMobScraper(logger)
         }
+        
+        # Безопасный параллельный агрегатор
+        self.parallel_aggregator = SafeParallelAggregator(self.scrapers, logger)
+        
+        # Режим работы (можно переключать)
+        self.use_parallel_mode = True
         
         # Приоритеты источников для разных типов данных (расширенные)
         self.source_priorities = {
@@ -552,3 +559,46 @@ class MultiSourceAggregator:
                 stats_health[source_name] = False
         
         return stats_health
+    
+    async def get_aggregated_matches_parallel(self, sport: str, data_type: str = 'basic_info') -> List[Dict[str, Any]]:
+        """
+        НОВЫЙ: Параллельное получение агрегированных данных матчей
+        """
+        try:
+            if not self.use_parallel_mode:
+                # Fallback на последовательный режим
+                return self.get_aggregated_matches(sport, data_type)
+            
+            self.logger.info(f"Параллельный агрегатор: сбор {data_type} для {sport}")
+            
+            # Используем параллельный агрегатор
+            sport_results = await self.parallel_aggregator.collect_sport_parallel(sport)
+            
+            if sport_results:
+                self.logger.info(f"Параллельный агрегатор: получено {len(sport_results)} матчей {sport}")
+                return sport_results
+            else:
+                # Fallback на обычный режим при проблемах
+                self.logger.warning(f"Параллельный режим не дал результата, переключаемся на обычный")
+                return self.get_aggregated_matches(sport, data_type)
+            
+        except Exception as e:
+            self.logger.error(f"Ошибка параллельного агрегатора для {sport}: {e}")
+            # Fallback на обычный режим
+            return self.get_aggregated_matches(sport, data_type)
+    
+    def set_parallel_mode(self, enabled: bool):
+        """
+        Переключение между параллельным и последовательным режимами
+        """
+        self.use_parallel_mode = enabled
+        mode_name = "параллельный" if enabled else "последовательный"
+        self.logger.info(f"Переключен на {mode_name} режим")
+    
+    def get_parallel_performance_stats(self) -> Dict[str, Any]:
+        """
+        Получение статистики производительности параллельной системы
+        """
+        if hasattr(self.parallel_aggregator, 'get_performance_report'):
+            return self.parallel_aggregator.get_performance_report()
+        return {}
