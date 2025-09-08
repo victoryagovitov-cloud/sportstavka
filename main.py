@@ -21,7 +21,9 @@ from scrapers.manual_live_provider import ManualLiveProvider
 from scrapers.demo_data_provider import demo_provider
 from utils.smart_scheduler import SmartScheduler
 from ai_analyzer.claude_analyzer import ClaudeAnalyzer
+from ai_analyzer.claude_analyzer_v2 import ClaudeAnalyzerV2
 from telegram_bot.reporter import TelegramReporter
+from telegram_bot.claude_telegram_reporter import ClaudeTelegramReporter
 
 from config import (
     SOFASCORE_URLS, SCORES24_URLS, CYCLE_INTERVAL_MINUTES, RETRY_DELAY_SECONDS,
@@ -58,7 +60,14 @@ class SportsAnalyzer:
         }
         
         self.claude_analyzer = ClaudeAnalyzer(self.logger)
+        
+        # Инициализируем Claude AI анализатор V2 для независимого анализа (Вариант 2)
+        self.claude_analyzer_v2 = ClaudeAnalyzerV2(self.logger)
+        
         self.telegram_reporter = TelegramReporter(self.logger)
+        
+        # Инициализируем специальный Telegram репортер для Claude AI V2
+        self.claude_telegram_reporter = ClaudeTelegramReporter(self.logger)
         
         self.logger.info("Автоматизированный аналитик спортивных ставок инициализирован")
     
@@ -407,23 +416,38 @@ class SportsAnalyzer:
             
             self.logger.info(f"📨 Отобрано {len(telegram_matches)} матчей для телеграм (период: {current_period.value})")
             
-            # Анализируем отобранные матчи через Claude AI (Вариант 2)
+            # Анализируем отобранные матчи через Claude AI V2 (Вариант 2)
             if telegram_matches:
-                self.logger.info(f"🧠 Запуск анализа Claude AI для {len(telegram_matches)} матчей")
-                # TODO: Интеграция с Claude AI (Вариант 2)
-                # analysis_results = self.claude_analyzer.analyze_matches_independently(telegram_matches)
+                self.logger.info(f"🧠 Запуск независимого анализа Claude AI для {len(telegram_matches)} матчей")
                 
-                # Пока логируем что будет отправлено
-                for i, match in enumerate(telegram_matches, 1):
-                    team1 = match.get('team1', 'N/A')[:15]
-                    team2 = match.get('team2', 'N/A')[:15]
-                    odds = match.get('odds', {})
-                    p1 = odds.get('П1', 'N/A')
-                    p2 = odds.get('П2', 'N/A')
+                # ВАРИАНТ 2: Claude AI независимый анализ
+                analysis_result = self.claude_analyzer_v2.analyze_matches_independently(telegram_matches)
+                
+                if analysis_result:
+                    self.logger.info(f"✅ Claude AI анализ получен ({len(analysis_result)} символов)")
                     
-                    self.logger.info(f"   {i}. {team1} vs {team2} (П1:{p1}, П2:{p2})")
-                
-                self.logger.info(f"✅ Готово к отправке в телеграм канал")
+                    # Отправляем результат в телеграм канал через специальный репортер
+                    send_success = self.claude_telegram_reporter.send_claude_analysis(
+                        claude_analysis=analysis_result,
+                        period=current_period.value,
+                        matches_count=len(telegram_matches),
+                        total_available=len(enriched_matches)
+                    )
+                    
+                    if send_success:
+                        self.logger.info("📨 Анализ успешно отправлен в телеграм канал")
+                    else:
+                        self.logger.warning("⚠️ Проблемы с отправкой в телеграм канал")
+                    
+                    # Получаем статистику анализа
+                    claude_stats = self.claude_analyzer_v2.get_analysis_stats()
+                    telegram_stats = self.claude_telegram_reporter.get_send_stats()
+                    
+                    self.logger.info(f"📊 Статистика Claude AI: {claude_stats}")
+                    self.logger.info(f"📊 Статистика Telegram: {telegram_stats}")
+                    
+                else:
+                    self.logger.warning("❌ Не удалось получить анализ Claude AI")
             
         except Exception as e:
             self.logger.error(f"Ошибка умного цикла: {e}")
