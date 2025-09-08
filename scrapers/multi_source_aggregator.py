@@ -54,6 +54,20 @@ class MultiSourceAggregator:
         self.enable_comprehensive_stats = True  # Флаг для полной статистики
         self.marathonbet_enrichment_enabled = True  # Специальное обогащение MarathonBet
         
+        # ФЛАГИ ДЕАКТИВАЦИИ ДЛЯ ВАРИАНТА 2 (Claude AI самостоятельный анализ)
+        self.variant_2_mode = True  # Режим Варианта 2
+        self.source_activation = {
+            'marathonbet': True,   # ОСНОВНОЙ источник - всегда активен
+            'sofascore': False,    # ДЕАКТИВИРОВАН для Варианта 2
+            'flashscore': False,   # ДЕАКТИВИРОВАН для Варианта 2
+            'scores24': False,     # ДЕАКТИВИРОВАН для Варианта 2
+        }
+        self.stats_activation = {
+            'team_stats': False,   # ДЕАКТИВИРОВАН для Варианта 2
+            'understat': False,    # ДЕАКТИВИРОВАН для Варианта 2
+            'fotmob': False,       # ДЕАКТИВИРОВАН для Варианта 2
+        }
+        
         # Приоритеты источников для разных типов данных (расширенные)
         self.source_priorities = {
             'live_scores': ['sofascore', 'flashscore', 'scores24', 'marathonbet'],  # Быстрые обновления
@@ -769,3 +783,114 @@ class MultiSourceAggregator:
             pass
         
         return {'calculation_failed': True}
+    
+    def get_active_sources_only(self) -> Dict[str, Any]:
+        """
+        Получение только активных источников для текущего режима
+        """
+        active_scrapers = {}
+        active_stats = {}
+        
+        # Фильтруем активные основные источники
+        for source_name, scraper in self.scrapers.items():
+            if self.source_activation.get(source_name, False):
+                active_scrapers[source_name] = scraper
+        
+        # Фильтруем активные статистические источники
+        for source_name, collector in self.stats_collectors.items():
+            if self.stats_activation.get(source_name, False):
+                active_stats[source_name] = collector
+        
+        self.logger.info(f"Активные источники: {list(active_scrapers.keys())}")
+        self.logger.info(f"Активные статистические: {list(active_stats.keys())}")
+        
+        return {
+            'scrapers': active_scrapers,
+            'stats_collectors': active_stats,
+            'mode': 'variant_2' if self.variant_2_mode else 'full_mode'
+        }
+    
+    def get_marathonbet_matches_for_claude_variant2(self, sports: List[str] = None) -> List[Dict[str, Any]]:
+        """
+        УПРОЩЕННЫЙ сбор данных для Варианта 2 - только MarathonBet
+        """
+        if sports is None:
+            sports = ['football', 'tennis', 'table_tennis', 'handball']
+        
+        self.logger.info(f"🎯 Вариант 2: Сбор данных только из MarathonBet для {len(sports)} видов спорта")
+        
+        all_matches = []
+        
+        # Собираем только из MarathonBet
+        if self.source_activation.get('marathonbet', False):
+            marathonbet_scraper = self.scrapers['marathonbet']
+            
+            for sport in sports:
+                try:
+                    sport_matches = marathonbet_scraper.get_live_matches_with_odds(sport, use_prioritization=False)
+                    
+                    # Добавляем метку источника
+                    for match in sport_matches:
+                        match['variant_2_source'] = 'marathonbet_only'
+                        match['claude_analysis_ready'] = True
+                    
+                    all_matches.extend(sport_matches)
+                    self.logger.info(f"MarathonBet {sport}: {len(sport_matches)} матчей")
+                    
+                except Exception as e:
+                    self.logger.error(f"Ошибка сбора MarathonBet {sport}: {e}")
+        
+        self.logger.info(f"✅ Вариант 2: Собрано {len(all_matches)} матчей только из MarathonBet")
+        return all_matches
+    
+    def toggle_variant_2_mode(self, enabled: bool):
+        """
+        Переключение между Вариантом 2 и полным режимом
+        """
+        self.variant_2_mode = enabled
+        
+        if enabled:
+            # Активируем только MarathonBet
+            self.source_activation.update({
+                'marathonbet': True,
+                'sofascore': False,
+                'flashscore': False,
+                'scores24': False
+            })
+            self.stats_activation.update({
+                'team_stats': False,
+                'understat': False,
+                'fotmob': False
+            })
+            self.logger.info("🎯 Переключено на Вариант 2: только MarathonBet активен")
+        else:
+            # Активируем все источники
+            self.source_activation.update({
+                'marathonbet': True,
+                'sofascore': True,
+                'flashscore': True,
+                'scores24': True
+            })
+            self.stats_activation.update({
+                'team_stats': True,
+                'understat': True,
+                'fotmob': True
+            })
+            self.logger.info("🔄 Переключено на полный режим: все источники активны")
+    
+    def get_system_status(self) -> Dict[str, Any]:
+        """
+        Получение статуса системы и активных компонентов
+        """
+        active_sources = [name for name, active in self.source_activation.items() if active]
+        active_stats = [name for name, active in self.stats_activation.items() if active]
+        
+        return {
+            'mode': 'Вариант 2 (Claude AI)' if self.variant_2_mode else 'Полный режим',
+            'active_sources': active_sources,
+            'active_stats_collectors': active_stats,
+            'deactivated_sources': [name for name, active in self.source_activation.items() if not active],
+            'deactivated_stats': [name for name, active in self.stats_activation.items() if not active],
+            'total_active': len(active_sources) + len(active_stats),
+            'total_deactivated': len([a for a in self.source_activation.values() if not a]) + len([a for a in self.stats_activation.values() if not a])
+        }

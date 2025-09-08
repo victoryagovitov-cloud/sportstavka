@@ -377,23 +377,29 @@ class SportsAnalyzer:
             
             self.logger.info(f"🕐 Запуск анализа в период {current_period.value} (Москва: {moscow_time.strftime('%H:%M')})")
             
-            # Собираем ВСЕ матчи MarathonBet
-            marathonbet_matches = []
-            for sport in ['football', 'tennis', 'table_tennis', 'handball']:
-                try:
-                    sport_matches = self.multi_source_aggregator.scrapers['marathonbet'].get_live_matches_with_odds(sport, use_prioritization=False)
-                    marathonbet_matches.extend(sport_matches)
-                except Exception as e:
-                    self.logger.warning(f"Ошибка сбора {sport}: {e}")
-            
-            if not marathonbet_matches:
-                self.logger.warning("Не найдено матчей MarathonBet")
-                return
-            
-            self.logger.info(f"📊 Собрано {len(marathonbet_matches)} матчей MarathonBet")
-            
-            # Обогащаем ВСЕ матчи для Claude AI
-            enriched_matches = self.multi_source_aggregator.enrich_marathonbet_matches_for_claude(marathonbet_matches)
+            # УПРОЩЕННЫЙ СБОР для Варианта 2 - только MarathonBet
+            if self.multi_source_aggregator.variant_2_mode:
+                marathonbet_matches = self.multi_source_aggregator.get_marathonbet_matches_for_claude_variant2()
+                
+                if not marathonbet_matches:
+                    self.logger.warning("Не найдено матчей MarathonBet")
+                    return
+                
+                # Для Варианта 2 обогащение не нужно - Claude AI сам анализирует
+                enriched_matches = marathonbet_matches
+                
+                self.logger.info(f"🎯 Вариант 2: Собрано {len(enriched_matches)} матчей только из MarathonBet")
+            else:
+                # Полный режим со всеми источниками (если переключимся обратно)
+                marathonbet_matches = []
+                for sport in ['football', 'tennis', 'table_tennis', 'handball']:
+                    try:
+                        sport_matches = self.multi_source_aggregator.scrapers['marathonbet'].get_live_matches_with_odds(sport, use_prioritization=False)
+                        marathonbet_matches.extend(sport_matches)
+                    except Exception as e:
+                        self.logger.warning(f"Ошибка сбора {sport}: {e}")
+                
+                enriched_matches = self.multi_source_aggregator.enrich_marathonbet_matches_for_claude(marathonbet_matches)
             
             # Фильтруем и приоритизируем для телеграм канала
             max_matches_for_telegram = self.smart_scheduler.get_max_matches_for_period(moscow_time)
