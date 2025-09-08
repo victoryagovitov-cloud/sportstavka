@@ -45,8 +45,13 @@ class MultiSourceAggregator:
         # Безопасный параллельный агрегатор
         self.parallel_aggregator = SafeParallelAggregator(self.scrapers, logger)
         
+        # Комплексный пайплайн статистики для MarathonBet
+        from utils.comprehensive_stats_pipeline import create_comprehensive_stats_pipeline
+        self.stats_pipeline = create_comprehensive_stats_pipeline(self, logger)
+        
         # Режим работы (можно переключать)
         self.use_parallel_mode = True
+        self.enable_comprehensive_stats = True  # Флаг для полной статистики
         
         # Приоритеты источников для разных типов данных (расширенные)
         self.source_priorities = {
