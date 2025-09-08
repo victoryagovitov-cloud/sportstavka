@@ -65,24 +65,19 @@ class MarathonBetScraper:
         try:
             self.logger.info(f"MarathonBet: получение {sport} с коэффициентами")
             
-            # URL для разных видов спорта
+            # ОПТИМИЗИРОВАННЫЕ URL - только лучшие для каждого спорта
             sport_urls = {
                 'football': [
-                    'https://www.marathonbet.ru/su/live/popular?',
-                    'https://www.marathonbet.ru/su/live/26418',  # Футбол
-                    'https://www.marathonbet.ru/su/live/football'
+                    'https://www.marathonbet.ru/su/live/26418'  # Только лучший URL
                 ],
                 'tennis': [
-                    'https://www.marathonbet.ru/su/live/26420',  # Теннис
-                    'https://www.marathonbet.ru/su/live/tennis'
+                    'https://www.marathonbet.ru/su/live/26420'  # Только лучший URL
                 ],
                 'table_tennis': [
-                    'https://www.marathonbet.ru/su/live/26421',  # Настольный теннис
-                    'https://www.marathonbet.ru/su/live/table-tennis'
+                    'https://www.marathonbet.ru/su/live/26421'  # Только лучший URL
                 ],
                 'handball': [
-                    'https://www.marathonbet.ru/su/live/26422',  # Гандбол
-                    'https://www.marathonbet.ru/su/live/handball'
+                    'https://www.marathonbet.ru/su/live/26422'  # Только лучший URL
                 ]
             }
             
@@ -99,11 +94,16 @@ class MarathonBetScraper:
                     self.logger.warning(f"MarathonBet {sport} {url} ошибка: {e}")
                     continue
                 
-                # Пауза между запросами
-                time.sleep(1)
+                # ОПТИМИЗИРОВАННАЯ пауза между запросами
+                time.sleep(0.5)
             
             # Убираем дубли и улучшаем данные
             unique_matches = self._deduplicate_and_enhance_matches(all_matches)
+            
+            # ОПТИМИЗАЦИЯ: Ранний выход если достаточно данных
+            if len(unique_matches) >= 50:  # Достаточно для анализа
+                self.logger.info(f"MarathonBet {sport}: достигнуто {len(unique_matches)} матчей - ранний выход")
+                return unique_matches
             
             self.logger.info(f"MarathonBet {sport} всего уникальных: {len(unique_matches)} матчей")
             return unique_matches
@@ -114,18 +114,19 @@ class MarathonBetScraper:
     
     def _get_enhanced_matches_from_url(self, url: str, sport: str) -> List[Dict[str, Any]]:
         """
-        УЛУЧШЕННОЕ получение матчей с конкретного URL
+        ОПТИМИЗИРОВАННОЕ получение матчей с конкретного URL
         """
         try:
-            # Сначала HTTP
-            response = self.session.get(url, timeout=15)
+            # БЫСТРЫЙ HTTP с сокращенным таймаутом
+            response = self.session.get(url, timeout=8)
             
             if response.status_code == 200 and 'captcha' not in response.text.lower():
                 matches = self._extract_enhanced_matches_from_html(response.text, url, sport)
-                if matches:
+                if matches and len(matches) >= 10:  # Достаточно данных
+                    self.logger.info(f"MarathonBet HTTP успех: {len(matches)} матчей за быстрый запрос")
                     return matches
             
-            # Если HTTP не сработал, пробуем браузер
+            # Если HTTP не дал достаточно данных, используем браузер
             return self._get_enhanced_via_browser_url(url, sport)
             
         except Exception as e:
@@ -146,13 +147,13 @@ class MarathonBetScraper:
             
             driver.get(url)
             
-            # Ждем загрузки
-            WebDriverWait(driver, 20).until(
+            # ОПТИМИЗИРОВАННОЕ ожидание загрузки
+            WebDriverWait(driver, 10).until(
                 lambda d: d.execute_script('return document.readyState') == 'complete'
             )
             
-            # Дополнительное ожидание для AJAX загрузки
-            time.sleep(8)
+            # ОПТИМИЗИРОВАННОЕ ожидание для AJAX загрузки
+            time.sleep(3)
             
             page_source = driver.page_source
             matches = self._extract_enhanced_matches_from_html(page_source, url, sport)
@@ -731,8 +732,8 @@ class MarathonBetScraper:
             
             driver.get(url)
             
-            # Ждем загрузки
-            WebDriverWait(driver, 20).until(
+            # ОПТИМИЗИРОВАННОЕ ожидание загрузки
+            WebDriverWait(driver, 10).until(
                 lambda d: d.execute_script('return document.readyState') == 'complete'
             )
             
