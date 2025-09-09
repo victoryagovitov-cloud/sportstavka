@@ -6,6 +6,7 @@ import os
 import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+from telegram_bot.custom_message_formatter import CustomTelegramFormatter
 
 try:
     from telegram import Bot
@@ -25,6 +26,9 @@ class ClaudeTelegramReporter:
         # Настройки телеграм бота
         self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
         self.channel_id = os.getenv('TELEGRAM_CHANNEL_ID')
+        
+        # Инициализация кастомного форматтера
+        self.custom_formatter = CustomTelegramFormatter(logger)
         
         # Инициализация бота
         self.bot = None
