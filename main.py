@@ -20,6 +20,7 @@ from scrapers.multi_source_aggregator import MultiSourceAggregator
 from scrapers.manual_live_provider import ManualLiveProvider
 from scrapers.demo_data_provider import demo_provider
 from utils.smart_scheduler import SmartScheduler
+from utils.football_league_prioritizer import FootballLeaguePrioritizer
 from ai_analyzer.claude_analyzer import ClaudeAnalyzer
 from ai_analyzer.claude_analyzer_v2 import ClaudeAnalyzerV2
 from telegram_bot.reporter import TelegramReporter
@@ -42,6 +43,9 @@ class SportsAnalyzer:
         # Инициализация компонентов
         # Умный планировщик по московскому времени
         self.smart_scheduler = SmartScheduler(self.logger)
+        
+        # Инициализация приоритизатора футбольных лиг
+        self.football_prioritizer = FootballLeaguePrioritizer(self.logger)
         
         # Инициализируем SofaScore скрапер для детальной статистики
         self.sofascore_scraper = SofaScoreSimpleQuality(self.logger)
@@ -469,7 +473,32 @@ class SportsAnalyzer:
             self.logger.info(f"📊 Доступно {available_count} матчей (меньше лимита {max_matches}) - берем все")
             return enriched_matches
         
-        # Приоритизируем по качеству для телеграм
+        # ПРИОРИТИЗАЦИЯ ФУТБОЛЬНЫХ ЛИГ (исключаем киберфутбол, понижаем ACL и 5x5)
+        football_matches = [m for m in enriched_matches if m.get('sport', '').lower() == 'football']
+        other_matches = [m for m in enriched_matches if m.get('sport', '').lower() != 'football']
+        
+        if football_matches:
+            self.logger.info(f"⚽ Приоритизируем {len(football_matches)} футбольных матчей")
+            prioritized_football = self.football_prioritizer.prioritize_football_matches(football_matches)
+            
+            # Логируем исключения киберфутбола
+            excluded_count = len(football_matches) - len(prioritized_football)
+            if excluded_count > 0:
+                self.logger.info(f"❌ ИСКЛЮЧЕНО КИБЕРФУТБОЛА: {excluded_count} матчей")
+        else:
+            prioritized_football = []
+        
+        # Объединяем приоритизированный футбол с другими видами спорта
+        all_prioritized_matches = prioritized_football + other_matches
+        
+        self.logger.info(f"📊 После приоритизации: {len(all_prioritized_matches)} матчей")
+        
+        # Если после приоритизации матчей стало меньше лимита - берем все
+        if len(all_prioritized_matches) <= max_matches:
+            self.logger.info(f"🎯 После приоритизации берем все: {len(all_prioritized_matches)} матчей")
+            return all_prioritized_matches
+        
+        # Дополнительная приоритизация по качеству для телеграм
         def calculate_telegram_priority(match):
             score = 0
             
@@ -517,9 +546,9 @@ class SportsAnalyzer:
             
             return score
         
-        # Сначала фильтруем качественные матчи
+        # Сначала фильтруем качественные матчи из приоритизированного списка
         quality_matches = []
-        for match in enriched_matches:
+        for match in all_prioritized_matches:
             # Фильтруем только матчи с реальными коэффициентами
             odds = match.get('odds', {})
             if not odds:
