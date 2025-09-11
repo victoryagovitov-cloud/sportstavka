@@ -1,0 +1,11 @@
+[project]
+name = "mcp-browser-project"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "browser-use-mcp-server>=1.0.3",
+    "mcp[cli]>=1.13.1",
+    "playwright>=1.55.0",
+]
