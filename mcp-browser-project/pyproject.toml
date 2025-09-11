@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "browser-use-mcp-server>=1.0.3",
+    "browser-use[cli]>=0.7.7",
     "mcp[cli]>=1.13.1",
     "playwright>=1.55.0",
 ]
